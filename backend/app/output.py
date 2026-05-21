@@ -118,7 +118,7 @@ def _format_character(c: Character, adopted_children: list | None = None) -> str
             lines.append(f"                target = character:{tgt}")
             lines.append("            }")
         else:
-            lines.append(f"            add_secret = {stype}")
+            lines.append(f"            add_secret = {{ type = {stype} }}")
         lines.append("        }")
         lines.append("    }")
 
