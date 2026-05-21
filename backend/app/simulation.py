@@ -656,7 +656,8 @@ def run_simulation(
             "sequences": list(seq_list),
             "index": 0,
             "started_year": settings.start_year,
-            "generations": 0,
+            "generations": 0,        # generations within the CURRENT sequence (reset on transition)
+            "total_generations": 0,  # successions over the title's whole life (caps at maximum_generations)
             "ruler_id": None,
         }
 
@@ -743,16 +744,12 @@ def run_simulation(
     # ------------------------------------------------------------------
     # Year-by-year tick
     # ------------------------------------------------------------------
-    global_generations = 0
     # Last year the tick actually ran. If the loop terminates early (e.g. the
     # maximum_generations cap is hit), survivors must resume aging from *here*,
     # not from end_year — otherwise everyone alive at the break freezes and is
     # later force-aged to (end_year - birth_year), surfacing as 200-year-olds.
     last_simulated_year = settings.start_year - 1
     for year in range(settings.start_year, settings.end_year + 1):
-        if global_generations >= settings.maximum_generations:
-            logger(f"Reached maximum_generations limit ({settings.maximum_generations}) at year {year}, stopping.")
-            break
         last_simulated_year = year
         if year % 50 == 0:
             logger(f"Simulating year {year}...")
@@ -945,6 +942,18 @@ def run_simulation(
 
         # 4. Succession + transition events for each title
         for tid, st in title_state.items():
+            # If this title has hit the cap, stop processing successions.
+            # When the final capped ruler dies, transition the title to vacant.
+            if st["total_generations"] >= settings.maximum_generations:
+                ruler = world.characters.get(st["ruler_id"]) if st["ruler_id"] else None
+                if ruler and not ruler.is_alive:
+                    if _is_non_county(tid):
+                        world.title_holders.setdefault(tid, []).append(
+                            (ruler.death_date, "0")
+                        )
+                    st["ruler_id"] = None
+                continue
+
             seq = st["sequences"][st["index"]]
             ruler = world.characters.get(st["ruler_id"]) if st["ruler_id"] else None
 
@@ -1005,7 +1014,7 @@ def run_simulation(
                     world.make_lowborn_spouse_and_marry(heir, year)
                     st["ruler_id"] = heir.id
                     st["generations"] += 1
-                    global_generations += 1
+                    st["total_generations"] += 1
                     world.title_holders[tid].append(
                         (ruler.death_date, heir.id)
                     )
