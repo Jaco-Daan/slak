@@ -92,6 +92,21 @@ def _lineof_prefix(dynasty: str) -> str:
     return s.split("_")[-1]
 
 
+def _slug_from_id(char_id: str) -> str:
+    """Best-effort lineof prefix slug from an existing character ID.
+
+    e.g. 'lineofbeor3' → 'beor', 'lineofbeor3wife' → 'beor'. Used so a bastard with
+    only a lowborn parent still gets a clean lineof{X}N id (never 'bastardN')."""
+    s = char_id
+    if s.startswith("lineof"):
+        s = s[len("lineof"):]
+    for suffix in ("wife", "husband"):
+        if s.endswith(suffix):
+            s = s[: -len(suffix)]
+    s = re.sub(r"\d+", "", s)
+    return s or "x"
+
+
 def _dynasty_culture_faith(dynasty_def: DynastyDefinition, year: int) -> tuple[str, str]:
     """Return (culture, faith) for a dynasty at the given year."""
     if not dynasty_def.culture_faith_periods:
@@ -262,15 +277,12 @@ class WorldState:
         }
 
     def _make_char_id(self, dynasty: str) -> str:
-        if dynasty:
-            prefix = _lineof_prefix(dynasty)
-            n = self._id_counters.get(prefix, 0) + 1
-            self._id_counters[prefix] = n
-            return f"lineof{prefix}{n}"
-        else:
-            n = self._id_counters.get("bastard", 0) + 1
-            self._id_counters["bastard"] = n
-            return f"bastard{n}"
+        # Never emit 'bastardN' — fall back to a generic 'x' prefix so every
+        # character gets a lineof{prefix}{n} id.
+        prefix = _lineof_prefix(dynasty) if dynasty else "x"
+        n = self._id_counters.get(prefix, 0) + 1
+        self._id_counters[prefix] = n
+        return f"lineof{prefix}{n}"
 
     # ------------------------------------------------------------------
     # Name picking (with optional inheritance)
@@ -351,6 +363,8 @@ class WorldState:
         father_id: Optional[str] = None,
         mother_id: Optional[str] = None,
         is_bastard: bool = False,
+        char_id: Optional[str] = None,
+        id_hint: str = "",
     ) -> Character:
         mult = self.trait_frequency_multiplier
         father = self.characters.get(father_id) if father_id else None
@@ -375,16 +389,25 @@ class WorldState:
         else:
             traits = roll_birth_traits(self.traits_registry, self.rng, mult)
 
-        # Bastards use their parent's dynasty prefix for the character ID so
-        # they follow the same lineof{X}N naming convention as legitimate children.
-        id_dynasty = dynasty
-        if is_bastard and not dynasty:
-            if father:
-                id_dynasty = _char_dynasty_id(father)
-            elif mother:
-                id_dynasty = _char_dynasty_id(mother)
-
-        cid = self._make_char_id(id_dynasty)
+        # ID assignment. An explicit char_id wins (generated spouses →
+        # "<partner>wife"/"<partner>husband"). Otherwise everyone — including
+        # bastards and lowborn — gets a clean lineof{X}N id derived from their
+        # dynasty, an id_hint (the household dynasty), or a parent.
+        if char_id is not None:
+            cid = char_id
+        else:
+            id_dynasty = dynasty or id_hint
+            if not id_dynasty:
+                for p in (father, mother):
+                    if p and _char_dynasty_id(p):
+                        id_dynasty = _char_dynasty_id(p)
+                        break
+                else:
+                    for p in (father, mother):
+                        if p:
+                            id_dynasty = _slug_from_id(p.id)
+                            break
+            cid = self._make_char_id(id_dynasty)
 
         # Dynasty definition lookup for name, languages, etc.
         ddef = self.dynasty_defs.get(dynasty) if dynasty else None
@@ -508,12 +531,22 @@ class WorldState:
                 return sp
         ruler_age = _age(ruler, year)
         spouse_age = max(16, min(ruler_age + self.rng.randint(-5, 5), 40))
+        spouse_is_female = not ruler.is_female
+        # ID derived from the partner: e.g. a wife for lineofA8 → "lineofA8wife".
+        # Disambiguate with a counter if the ruler had an earlier spouse.
+        suffix = "wife" if spouse_is_female else "husband"
+        spouse_id = f"{ruler.id}{suffix}"
+        n = 2
+        while spouse_id in self.characters:
+            spouse_id = f"{ruler.id}{suffix}{n}"
+            n += 1
         spouse = self.make_character(
             dynasty="",  # lowborn — appears as external ghost via parent-child link, not as dynasty root
             culture=ruler.culture,
             religion=ruler.religion,
-            is_female=not ruler.is_female,
+            is_female=spouse_is_female,
             birth_year=year - spouse_age,
+            char_id=spouse_id,
         )
         self.marry(ruler, spouse, year)
         return spouse
@@ -819,6 +852,7 @@ def run_simulation(
                     birth_year=year,
                     father_id=char.id,
                     is_bastard=True,
+                    id_hint=_char_dynasty_id(char),
                 )
             spouse_age = _age(spouse, year)
             if 16 <= spouse_age <= 45 and rng.random() < modifiers.female_bastard_chance:
@@ -830,6 +864,7 @@ def run_simulation(
                     birth_year=year,
                     mother_id=spouse.id,
                     is_bastard=True,
+                    id_hint=_char_dynasty_id(char),
                 )
 
             if spouse_age < 16 or spouse_age > 45:
