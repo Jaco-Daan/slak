@@ -744,10 +744,16 @@ def run_simulation(
     # Year-by-year tick
     # ------------------------------------------------------------------
     global_generations = 0
+    # Last year the tick actually ran. If the loop terminates early (e.g. the
+    # maximum_generations cap is hit), survivors must resume aging from *here*,
+    # not from end_year — otherwise everyone alive at the break freezes and is
+    # later force-aged to (end_year - birth_year), surfacing as 200-year-olds.
+    last_simulated_year = settings.start_year - 1
     for year in range(settings.start_year, settings.end_year + 1):
         if global_generations >= settings.maximum_generations:
             logger(f"Reached maximum_generations limit ({settings.maximum_generations}) at year {year}, stopping.")
             break
+        last_simulated_year = year
         if year % 50 == 0:
             logger(f"Simulating year {year}...")
 
@@ -1030,7 +1036,7 @@ def run_simulation(
     # All characters who survived to end_year must receive a death date.
     # Without this they would appear immortal when the game loads — hundreds
     # of years old at the CK3 start date.
-    _kill_survivors(world, settings.end_year, modifiers.average_lifespan)
+    _kill_survivors(world, last_simulated_year, modifiers.average_lifespan)
 
     # Optional post-passes. Both pick dates inside a character's lifespan, so they
     # run after _kill_survivors has stamped every character with a death date.
@@ -1046,15 +1052,20 @@ def run_simulation(
 # Post-simulation survivor cleanup
 # ---------------------------------------------------------------------------
 
-def _kill_survivors(world: WorldState, end_year: int, avg_lifespan: float = 70.0) -> None:
-    """Simulate natural deaths for every character still alive at end_year.
+def _kill_survivors(world: WorldState, last_year: int, avg_lifespan: float = 70.0) -> None:
+    """Simulate natural deaths for every character still alive when the tick stopped.
+
+    `last_year` is the final year the main loop actually ran (which may be before
+    end_year if the maximum_generations cap was hit). Resuming from the year after
+    it — rather than always from end_year — means characters who were alive at an
+    early break die at natural ages instead of being force-aged to ~200.
 
     Continues the annual mortality tick until all characters have died or the
-    hard cap (end_year + 200) is reached. Remaining immortals are force-killed
+    hard cap (last_year + 200) is reached. Remaining immortals are force-killed
     at the cap with death_natural_causes.
     """
-    hard_cap = end_year + 200
-    for year in range(end_year + 1, hard_cap + 1):
+    hard_cap = last_year + 200
+    for year in range(last_year + 1, hard_cap + 1):
         alive = [c for c in world.characters.values() if c.is_alive]
         if not alive:
             break

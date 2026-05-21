@@ -147,7 +147,7 @@ Changes in one place **require** matching changes in the other:
 
 | Item | Detail |
 |---|---|
-| `maximum_generations` | Simulation checks it but interacts with per-title sequence config — a single long sequence can exhaust all generations before timeline ends |
+| `maximum_generations` | Simulation checks it but interacts with per-title sequence config — a single long sequence can exhaust all generations before timeline ends. **`global_generations` is a cross-title SUM** (incremented on every succession of every title in `simulation.py`), so with several titles configured the default cap of 30 is hit early and the whole sim loop breaks mid-timeline — title/succession history just stops after the break year. **TODO (follow-up):** make the generation cap **per-title** instead of global so multi-title timelines run all the way to `end_year`. NOTE: the related "200-year-old characters" bug (survivors frozen at the break, then force-aged from `end_year+1`) is already FIXED — `_kill_survivors` now resumes mortality from `last_simulated_year`. |
 | Bastard system | Fully implemented; bastards have no title succession rights (by design) |
 | ZIP delivery | Returned inline as base64 in the `/generate` response — never written to disk (keeps the backend stateless/serverless-friendly) |
 | Traits preview | Parsed and stored; no frontend view — used only during simulation |
