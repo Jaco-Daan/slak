@@ -154,12 +154,14 @@ def _format_character(c: Character, adopted_children: list | None = None) -> str
         block.append("    }")
         middle.append((_date_key(c.personality_trait_date), block))
 
-    # Nickname (granted in adulthood, in a dated effect block)
+    # Nickname (granted in adulthood). give_nickname sits directly under the date
+    # block; a separate effect stamps a flag marking the nickname event.
     if c.nickname and c.nickname_date:
         middle.append((_date_key(c.nickname_date), [
             f"    {c.nickname_date} = {{",
+            f"        give_nickname = {c.nickname}",
             "        effect = {",
-            f"            give_nickname = {c.nickname}",
+            "            add_character_flag = had_nickname_event",
             "        }",
             "    }",
         ]))
