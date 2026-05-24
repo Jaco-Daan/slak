@@ -867,17 +867,24 @@ def run_simulation(
                 )
             continue
 
+        # A dynasty whose definition starts later than the global timeline is a
+        # "delayed" dynasty (so one line can die off and a later one take over).
+        # Its founder is born, marries, and accedes around that later year — NOT
+        # the global start. Anchoring all three to it keeps the founder's marriage
+        # and first title-holding from landing before they are even born.
+        ddef = world.dynasty_defs.get(seq.dynasty_id)
+        dyn_start = settings.start_year
+        if ddef and ddef.start_year and ddef.start_year > settings.start_year:
+            dyn_start = ddef.start_year
+
         existing_founder_id = dynasty_founders.get(seq.dynasty_id)
         if existing_founder_id:
             founder = world.characters[existing_founder_id]
         else:
-            ddef = world.dynasty_defs.get(seq.dynasty_id)
-            founder_birth = settings.start_year - 35
-            if ddef and ddef.start_year:
-                founder_birth = ddef.start_year - 35
+            founder_birth = dyn_start - 35
             culture, religion = ("default_culture", "default_faith")
             if ddef:
-                culture, religion = _dynasty_culture_faith(ddef, settings.start_year)
+                culture, religion = _dynasty_culture_faith(ddef, dyn_start)
             founder = world.make_character(
                 dynasty=seq.dynasty_id,
                 culture=culture,
@@ -886,12 +893,13 @@ def run_simulation(
                 birth_year=founder_birth,
             )
             # Spouse is lowborn so they don't appear as a second dynasty root
-            world.make_lowborn_spouse_and_marry(founder, settings.start_year)
+            world.make_lowborn_spouse_and_marry(founder, dyn_start)
             dynasty_founders[seq.dynasty_id] = founder.id
 
         st["ruler_id"] = founder.id
+        st["started_year"] = dyn_start
         world.title_holders.setdefault(tid, []).append(
-            (_date(settings.start_year, 1, 1), founder.id)
+            (_date(dyn_start, 1, 1), founder.id)
         )
         world.current_dynasty[tid] = seq.dynasty_id
 
