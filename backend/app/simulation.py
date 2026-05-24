@@ -65,6 +65,132 @@ _SIMPLE_SECRETS: list[str] = [
 
 
 # ---------------------------------------------------------------------------
+# Nickname catalogue (no upload). Each entry maps a nickname id to eligibility
+# predicates so a character only gets a nickname that fits them:
+#   ruler   – True: title-holders only; False: non-rulers only; None: either
+#   gender  – "male" / "female" / None
+#   any_of  – character must have >=1 of these traits (matched exactly, or as an
+#             "<id>_*" level prefix so e.g. "physique_good" matches "physique_good_2")
+#   none_of – character must have NONE of these traits (e.g. righteous forbids cynical)
+#   min_age – minimum age reached (death_year - birth_year)
+# `bad` mirrors the mod's `is_bad = yes` flag — kept only so good/bad picks stay
+# sensible (it isn't written to history; the mod's nickname file owns is_bad).
+# Personality traits are always present (assigned at 16); genetic/physical traits
+# depend on the uploaded trait file, so physical nicknames simply never trigger
+# when those traits are absent — that's intentional, not a bug.
+# ---------------------------------------------------------------------------
+
+def _nn(nid, *, bad=False, ruler=None, gender=None, any_of=None, none_of=None, min_age=None):
+    return {"id": nid, "bad": bad, "ruler": ruler, "gender": gender,
+            "any_of": any_of, "none_of": none_of, "min_age": min_age}
+
+
+_NICKNAME_CATALOGUE: list[dict] = [
+    # --- Virtue / personality (good) ---
+    _nn("nick_the_righteous", any_of=["zealous", "just"], none_of=["cynical"]),
+    _nn("nick_the_zealot", any_of=["zealous"], none_of=["cynical"]),
+    _nn("nick_the_prophet", any_of=["zealous"], none_of=["cynical"]),
+    _nn("nick_the_faith", any_of=["zealous"], none_of=["cynical"]),
+    _nn("nick_the_miracle_worker", any_of=["zealous", "compassionate"], none_of=["cynical"]),
+    _nn("nick_the_merciful", any_of=["compassionate", "forgiving"], none_of=["callous", "sadistic"]),
+    _nn("nick_the_understanding", any_of=["patient", "compassionate", "forgiving"], none_of=["wrathful"]),
+    _nn("nick_the_humble", any_of=["humble"], none_of=["arrogant"]),
+    _nn("nick_the_negotiator", any_of=["patient", "honest", "gregarious"], none_of=["wrathful"]),
+    _nn("nick_the_silver_tongue", any_of=["deceitful", "gregarious"]),
+    _nn("nick_the_patron_of_arts", any_of=["generous", "gregarious"]),
+    _nn("nick_the_lover_of_elegance", any_of=["arrogant", "gregarious", "lustful"]),
+    _nn("nick_the_collector", any_of=["greedy", "diligent"]),
+    _nn("nick_the_jovial", any_of=["gregarious", "content"]),
+    _nn("nick_the_jolly", any_of=["gregarious", "gluttonous", "content"]),
+    _nn("nick_the_carpenter", any_of=["diligent"]),
+    _nn("nick_the_healer", any_of=["compassionate", "diligent"]),
+    _nn("nick_the_resilient", any_of=["brave", "stubborn", "diligent"]),
+    _nn("nick_the_persevering", any_of=["diligent", "stubborn", "patient"]),
+    _nn("nick_the_determined", any_of=["stubborn", "ambitious", "diligent"]),
+    _nn("nick_of_a_thousand_faces", any_of=["deceitful"]),
+    # --- Warrior (good) ---
+    _nn("nick_the_berserker", any_of=["brave", "wrathful"]),
+    _nn("nick_longsword", any_of=["brave"]),
+    _nn("nick_greataxe", any_of=["brave", "wrathful"]),
+    _nn("nick_the_mace", any_of=["brave"]),
+    _nn("nick_the_maul", any_of=["brave", "wrathful"]),
+    _nn("nick_the_stout", any_of=["brave", "gluttonous", "physique_good"]),
+    _nn("nick_the_boar", any_of=["brave", "wrathful", "giant"]),
+    # --- Ruler / role (good) ---
+    _nn("nick_the_lord_of_realm", ruler=True),
+    _nn("nick_the_shield_of_capital", ruler=True, any_of=["brave"]),
+    _nn("nick_the_spear_of_capital", ruler=True, any_of=["brave"]),
+    _nn("nick_the_griffin", ruler=True, any_of=["brave"]),
+    _nn("nick_the_castellan", ruler=True, any_of=["diligent", "stubborn"]),
+    _nn("nick_the_universal_spider", ruler=True, any_of=["deceitful", "paranoid"]),
+    _nn("nick_the_navigator", any_of=["brave", "diligent"]),
+    _nn("nick_the_executioner", any_of=["sadistic", "callous", "just"]),
+    # --- Gendered (good) ---
+    _nn("nick_the_nun", gender="female", any_of=["chaste", "zealous"]),
+    _nn("nick_the_dragoness", gender="female", any_of=["brave", "wrathful", "ambitious"]),
+    _nn("nick_the_stallion", gender="male", any_of=["lustful"]),
+    _nn("nick_the_horse", gender="male", any_of=["physique_good", "giant"]),
+    # --- Physical / age (good) ---
+    _nn("nick_the_goliath", any_of=["giant"]),
+    _nn("nick_longshanks", any_of=["giant"]),
+    _nn("nick_the_beautiful", any_of=["beauty_good"], none_of=["beauty_bad", "scaly"]),
+    _nn("nick_the_desired", any_of=["beauty_good"], none_of=["beauty_bad"]),
+    _nn("nick_the_undying", min_age=75),
+    _nn("nick_the_venerable", min_age=70, none_of=["cynical"]),
+    _nn("nick_the_elder", min_age=65),
+    # --- Eccentric / luck (good or neutral) ---
+    _nn("nick_the_strange", any_of=["eccentric", "lunatic", "possessed"]),
+    _nn("nick_the_lucky"),   # no condition — pure flavour
+    # --- Personality (bad) ---
+    _nn("nick_the_wrathful", bad=True, any_of=["wrathful"]),
+    _nn("nick_the_ill_tempered", bad=True, any_of=["wrathful", "arbitrary", "impatient"]),
+    _nn("nick_the_bellower", bad=True, any_of=["wrathful", "arrogant"]),
+    _nn("nick_the_quarrelsome", bad=True, any_of=["wrathful", "stubborn", "arbitrary"]),
+    _nn("nick_the_turbulent", bad=True, any_of=["wrathful", "ambitious"]),
+    _nn("nick_the_petulant", bad=True, any_of=["impatient", "arbitrary"]),
+    _nn("nick_the_vain", bad=True, any_of=["arrogant"], none_of=["humble"]),
+    _nn("nick_the_peacock", bad=True, any_of=["arrogant", "lustful"]),
+    _nn("nick_the_disgraceful", bad=True, any_of=["craven", "deceitful"]),
+    _nn("nick_the_careless", bad=True, any_of=["lazy", "arbitrary"]),
+    _nn("nick_the_forgetful", bad=True, any_of=["eccentric", "lunatic", "lazy"]),
+    _nn("nick_the_indolent", bad=True, any_of=["lazy"]),
+    _nn("nick_the_sluggard", bad=True, any_of=["lazy", "gluttonous"]),
+    _nn("nick_the_idle", bad=True, any_of=["lazy"]),
+    _nn("nick_the_evil", bad=True, any_of=["sadistic", "callous"], none_of=["compassionate", "just"]),
+    _nn("nick_the_abominable", bad=True, any_of=["sadistic", "scaly", "possessed"]),
+    _nn("nick_the_chimera", bad=True, any_of=["scaly", "possessed", "lunatic"]),
+    _nn("nick_the_haunted", bad=True, any_of=["paranoid", "lunatic", "possessed"]),
+    _nn("nick_cuckoo", bad=True, any_of=["lunatic", "eccentric", "possessed"]),
+    _nn("nick_the_clueless", bad=True, any_of=["eccentric", "shy"], none_of=["diligent"]),
+    _nn("nick_the_faceless", bad=True, any_of=["deceitful", "shy"]),
+    _nn("nick_the_hermit", bad=True, any_of=["shy"], none_of=["gregarious"]),
+    _nn("nick_the_recluse", bad=True, any_of=["shy", "paranoid"], none_of=["gregarious"]),
+    # --- Ruler (bad) ---
+    _nn("nick_the_ill_ruler", bad=True, ruler=True, any_of=["craven", "lazy", "arbitrary", "infirm", "ill"]),
+    _nn("nick_the_sleeping_king", bad=True, ruler=True, any_of=["lazy", "content"]),
+    _nn("nick_do_nothing", bad=True, ruler=True, any_of=["lazy", "content"]),
+    _nn("nick_softsword", bad=True, ruler=True, any_of=["craven", "lazy"], none_of=["brave"]),
+    _nn("nick_lackland", bad=True, ruler=True, any_of=["craven", "lazy"]),
+    _nn("nick_of_the_empty_pockets", bad=True, any_of=["greedy", "lazy"]),
+    # --- Physical (bad) ---
+    _nn("nick_the_plaguebearer", bad=True, any_of=["ill", "infirm", "leper", "diseased", "bleeder", "wheezing"]),
+    _nn("nick_the_feeble", bad=True, any_of=["physique_bad", "infirm", "ill", "dwarf"]),
+    _nn("nick_the_slobberer", bad=True, any_of=["lunatic", "possessed", "physique_bad", "infirm"]),
+    _nn("nick_the_rotund", bad=True, any_of=["gluttonous", "physique_bad"]),
+    _nn("nick_the_cyclops", bad=True, any_of=["one_eyed", "maimed"]),
+    _nn("nick_the_beanstalk", bad=True, any_of=["giant"]),
+    _nn("nick_the_ladder_legs", bad=True, any_of=["giant"]),
+    _nn("nick_the_short", bad=True, any_of=["dwarf"]),
+    _nn("nick_elbow_high", bad=True, any_of=["dwarf"]),
+    _nn("nick_the_actually_bald", bad=True, any_of=["bald"]),
+    _nn("nick_the_bald_ironic", bad=True, any_of=["bald"]),
+    _nn("nick_the_eunuch", bad=True, gender="male", any_of=["eunuch"]),
+    _nn("nick_the_effeminate", bad=True, gender="male", any_of=["shy", "craven", "lustful"]),
+    _nn("nick_the_unlucky", bad=True),  # no condition — pure flavour
+]
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -1080,6 +1206,8 @@ def run_simulation(
         _generate_relationships(world)
     if settings.enable_secrets:
         _generate_secrets(world)
+    if settings.enable_nicknames:
+        _generate_nicknames(world)
 
     return world
 
@@ -1276,6 +1404,81 @@ def _generate_secrets(world: WorldState) -> None:
             if meta.get("lover") or (meta.get("incest") and rng.random() < 0.5):
                 entry["with_lover"] = True
         c.secrets.append(entry)
+
+
+# ---------------------------------------------------------------------------
+# Nicknames (optional post-pass)
+# ---------------------------------------------------------------------------
+
+def _has_trait(traits: set[str], names: list[str]) -> bool:
+    """True if the character has any of `names` — matched exactly or as a level
+    prefix (so "physique_good" matches "physique_good_2") to handle leveled
+    genetic traits without over-matching personality words."""
+    for t in traits:
+        for n in names:
+            if t == n or t.startswith(n + "_"):
+                return True
+    return False
+
+
+def _nick_eligible(n: dict, is_ruler: bool, is_female: bool, traits: set[str], age: int) -> bool:
+    if n["ruler"] is True and not is_ruler:
+        return False
+    if n["ruler"] is False and is_ruler:
+        return False
+    if n["gender"] == "female" and not is_female:
+        return False
+    if n["gender"] == "male" and is_female:
+        return False
+    if n["any_of"] and not _has_trait(traits, n["any_of"]):
+        return False
+    if n["none_of"] and _has_trait(traits, n["none_of"]):
+        return False
+    if n["min_age"] is not None and age < n["min_age"]:
+        return False
+    return True
+
+
+def _generate_nicknames(world: WorldState) -> None:
+    """Give a fraction of characters a fitting nickname (no upload needed).
+
+    A nickname is only drawn from those the character actually qualifies for —
+    keyed off personality/genetic traits, gender, ruler status, and age — so e.g.
+    a cynical character can never become 'the Righteous' and only title-holders
+    get ruler nicknames. Rulers are nicknamed more often than commoners.
+    """
+    rng = world.rng
+    ruler_ids = {
+        cid
+        for holders in world.title_holders.values()
+        for _, cid in holders
+        if cid != "0"
+    }
+    for c in world.characters.values():
+        is_ruler = c.id in ruler_ids
+        if rng.random() > (0.18 if is_ruler else 0.05):
+            continue
+        traits: set[str] = set(c.traits) | set(c.personality_traits)
+        if c.childhood_trait:
+            traits.add(c.childhood_trait)
+        birth, death = _life_years(c)
+        age = max(0, death - birth)
+        eligible = [
+            n for n in _NICKNAME_CATALOGUE
+            if _nick_eligible(n, is_ruler, c.is_female, traits, age)
+        ]
+        if not eligible:
+            continue
+        chosen = rng.choice(eligible)
+        lo = birth + 16
+        hi = death
+        if lo > hi:
+            lo = birth
+        year = rng.randint(lo, hi) if hi >= lo else death
+        c.nickname = chosen["id"]
+        c.nickname_date = _clamp_event_date(
+            _date(year, rng.randint(1, 12), rng.randint(1, 28)), c
+        )
 
 
 # ---------------------------------------------------------------------------

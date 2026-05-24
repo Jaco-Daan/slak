@@ -63,6 +63,7 @@ function _defaultGlobalSettings() {
     ignore_title_generation: false,
     enable_secrets: false,
     enable_relationships: false,
+    enable_nicknames: true,
     personality_traits: {
       total_traits_per_character: 3,
       traits: _defaultPersonalityTraits(),

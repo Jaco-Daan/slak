@@ -154,6 +154,16 @@ def _format_character(c: Character, adopted_children: list | None = None) -> str
         block.append("    }")
         middle.append((_date_key(c.personality_trait_date), block))
 
+    # Nickname (granted in adulthood, in a dated effect block)
+    if c.nickname and c.nickname_date:
+        middle.append((_date_key(c.nickname_date), [
+            f"    {c.nickname_date} = {{",
+            "        effect = {",
+            f"            give_nickname = {c.nickname}",
+            "        }",
+            "    }",
+        ]))
+
     # Optional employment block (claimant displacement)
     if c.employer_id and c.employer_date:
         middle.append((_date_key(c.employer_date), [

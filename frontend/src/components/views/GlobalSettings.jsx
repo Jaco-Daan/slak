@@ -601,6 +601,12 @@ export default function GlobalSettings() {
               value={global_settings.enable_relationships}
               onChange={(v) => setGlobal({ enable_relationships: v })}
             />
+            <CheckboxField
+              label="Enable Nicknames"
+              description="Slight chance to grant a trait/role-appropriate nickname (e.g. the Righteous, the Wrathful). Rulers more often."
+              value={global_settings.enable_nicknames ?? true}
+              onChange={(v) => setGlobal({ enable_nicknames: v })}
+            />
           </>
         )}
       </div>

@@ -159,6 +159,10 @@ Changes in one place **require** matching changes in the other:
 
 ## Explicitly Out of Scope (spec mandate)
 
-Do not add: culling mechanics, dynamic nicknames, 3D DNA strings.
+Do not add: culling mechanics, 3D DNA strings.
 
 Cadet branches, secrets, and relationships are **in scope** via `Jis_Additional.pdf`.
+Nicknames are **in scope** (owner request 2026-05): a slight chance to grant a
+trait/role/gender-appropriate nickname per character via `give_nickname` (gated by
+`enable_nicknames`). This is static history assignment — *not* CK3's runtime
+dynamic-nickname system, which remains out of scope.

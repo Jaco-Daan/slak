@@ -102,6 +102,7 @@ class GlobalSettings(BaseModel):
     ignore_title_generation: bool = False
     enable_secrets: bool = False
     enable_relationships: bool = False
+    enable_nicknames: bool = True  # slight chance to give characters a trait/role-appropriate nickname
     personality_traits: PersonalityTraitsConfig = Field(
         default_factory=PersonalityTraitsConfig
     )
@@ -205,6 +206,10 @@ class Character(BaseModel):
 
     # Languages acquired at birth (written into birth block effect)
     birth_languages: list[str] = Field(default_factory=list)
+
+    # Nickname (set when enable_nicknames) — written as a dated give_nickname effect.
+    nickname: Optional[str] = None       # e.g. "nick_the_righteous"
+    nickname_date: Optional[str] = None  # YYYY.M.D the nickname is granted (adulthood)
 
     birth_date: str  # YYYY.M.D
     death_date: Optional[str] = None

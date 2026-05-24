@@ -249,6 +249,7 @@ SimulationPayload
 │   ├── ignore_title_generation (default false)
 │   ├── enable_secrets (default false)      ← when true, rolls hardcoded secrets (no upload)
 │   ├── enable_relationships (default false) ← when true, rolls built-in relationships between contemporaries
+│   ├── enable_nicknames (default true)     ← when true, gives a fraction of characters a fitting nickname (no upload)
 │   └── personality_traits: PersonalityTraitsConfig
 │       ├── total_traits_per_character (default 3)
 │       └── traits: dict[name → {weight, excludes[]}]  ← 28 CK3 traits pre-populated
@@ -301,6 +302,8 @@ SimulationPayload
 | `personality_trait_date: Optional[str]` | `YYYY.M.D` of 16th birthday — gates the personality trait date block in output |
 | `marriages: list[dict]` | Each entry: `{"date", "spouse_id", "type"}` — written as date blocks before birth block |
 | `birth_languages: list[str]` | Language IDs active at birth year; written as `learn_language` in birth block effect |
+| `nickname: Optional[str]` | Nickname id (e.g. `nick_the_righteous`) from `_generate_nicknames`; written as a dated `give_nickname` effect |
+| `nickname_date: Optional[str]` | `YYYY.M.D` the nickname is granted (adulthood, clamped ≤ death) — gates the nickname block |
 | `childhood_trait_assigned: bool` | Guard flag — prevents double-assignment at age 3 |
 | `personality_assigned: bool` | Guard flag — prevents double-assignment at age 16 |
 
@@ -334,6 +337,7 @@ Dated blocks (birth first → chronologically-sorted middle → death last):
 - Relationship effect blocks (if any): `YYYY.M.D = { effect = { if = { limit = { character:ID = { is_alive = yes } } set_relation_X = character:ID } } }` — wrapped in an `is_alive` check so the relation only fires when the target is still alive at that date (X ∈ lover/soulmate/rival/nemesis/friend/best_friend/bully/crush)
 - Secret effect blocks (if any): bare `add_secret = secret_X`, or block `add_secret = { type = secret_X target = character:Y }` for murder/murder_attempt/lover; `secret_lover` (and incest-lover) also emit `set_relation_lover = character:Y` in the same block — that relation is wrapped in the same `if = { limit = { character:Y = { is_alive = yes } } ... }` guard as relationships (the `add_secret` itself stays unguarded — a secret about a dead character is valid)
 - Personality trait date block: `YYYY.M.D = { trait = ... }` at age-16 date
+- Nickname block (if any): `YYYY.M.D = { effect = { give_nickname = nick_X } }` — set by the `_generate_nicknames` post-pass (gated on `enable_nicknames`) from `_NICKNAME_CATALOGUE`, which keys each nickname to trait/ruler/gender/age predicates (e.g. `the_righteous` requires zealous/just and forbids cynical; ruler-only nicknames need a title holder). Rulers are nicknamed more often than commoners.
 - Employer block (claimant displacement) if `employer_id` and `employer_date`
 - Death block if `death_date` (pinned last)
 
