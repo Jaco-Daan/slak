@@ -80,18 +80,31 @@ def _format_character(c: Character, adopted_children: list | None = None) -> str
     # ------------------------------------------------------------------
     middle: list[tuple[tuple, list[str]]] = []
 
+    # Clamp any dated event to no later than death. A character can legitimately
+    # be created married in the same year they later die (e.g. a founder seeded at
+    # a dynasty's start year who dies that year); since marriage/death month-days
+    # are independent, the marriage can otherwise land after the death date, which
+    # CK3 rejects as "history after death". Pulling it onto the death date keeps
+    # the block valid and chronological (death is still emitted last in the file).
+    def _clamp(date_str: str) -> str:
+        if c.death_date and _date_key(date_str) > _date_key(c.death_date):
+            return c.death_date
+        return date_str
+
     # Marriage events
     for marriage in c.marriages:
-        middle.append((_date_key(marriage["date"]), [
-            f"    {marriage['date']} = {{",
+        d = _clamp(marriage["date"])
+        middle.append((_date_key(d), [
+            f"    {d} = {{",
             f"        {marriage['type']} = {marriage['spouse_id']}",
             "    }",
         ]))
 
     # Adoption effects — this character adopts each heir at the heir's birth date.
     for child in adopted_children:
-        middle.append((_date_key(child.birth_date), [
-            f"    {child.birth_date} = {{",
+        d = _clamp(child.birth_date)
+        middle.append((_date_key(d), [
+            f"    {d} = {{",
             "        effect = {",
             f"            adopt = character:{child.id}",
             "",
@@ -109,8 +122,9 @@ def _format_character(c: Character, adopted_children: list | None = None) -> str
     # Guarded by an is_alive check so the relation only fires when the target is
     # still alive at that date (a target may have died before this event).
     for rel in c.relationships:
-        middle.append((_date_key(rel["date"]), [
-            f"    {rel['date']} = {{",
+        d = _clamp(rel["date"])
+        middle.append((_date_key(d), [
+            f"    {d} = {{",
             "        effect = {",
             "            if = {",
             f"                limit = {{ character:{rel['target_id']} = {{ is_alive = yes }} }}",
@@ -127,7 +141,8 @@ def _format_character(c: Character, adopted_children: list | None = None) -> str
     for sec in c.secrets:
         stype = sec["type"]
         tgt = sec.get("target_id")
-        block = [f"    {sec['date']} = {{", "        effect = {"]
+        d = _clamp(sec["date"])
+        block = [f"    {d} = {{", "        effect = {"]
         if sec.get("with_lover") and tgt:
             # Guard the relationship on the target still being alive (same as the
             # relationship blocks above). The add_secret below is left unguarded —
@@ -145,21 +160,23 @@ def _format_character(c: Character, adopted_children: list | None = None) -> str
             block.append(f"            add_secret = {{ type = {stype} }}")
         block.append("        }")
         block.append("    }")
-        middle.append((_date_key(sec["date"]), block))
+        middle.append((_date_key(d), block))
 
     # Personality traits block (assigned at age 16, in a date block)
     if c.personality_traits and c.personality_trait_date:
-        block = [f"    {c.personality_trait_date} = {{"]
+        d = _clamp(c.personality_trait_date)
+        block = [f"    {d} = {{"]
         for trait in c.personality_traits:
             block.append(f"        trait = {trait}")
         block.append("    }")
-        middle.append((_date_key(c.personality_trait_date), block))
+        middle.append((_date_key(d), block))
 
     # Nickname (granted in adulthood). give_nickname sits directly under the date
     # block; a separate effect stamps a flag marking the nickname event.
     if c.nickname and c.nickname_date:
-        middle.append((_date_key(c.nickname_date), [
-            f"    {c.nickname_date} = {{",
+        d = _clamp(c.nickname_date)
+        middle.append((_date_key(d), [
+            f"    {d} = {{",
             f"        give_nickname = {c.nickname}",
             "        effect = {",
             "            add_character_flag = had_nickname_event",
@@ -169,8 +186,9 @@ def _format_character(c: Character, adopted_children: list | None = None) -> str
 
     # Optional employment block (claimant displacement)
     if c.employer_id and c.employer_date:
-        middle.append((_date_key(c.employer_date), [
-            f"    {c.employer_date} = {{",
+        d = _clamp(c.employer_date)
+        middle.append((_date_key(d), [
+            f"    {d} = {{",
             f"        employer = {c.employer_id}",
             "    }",
         ]))
