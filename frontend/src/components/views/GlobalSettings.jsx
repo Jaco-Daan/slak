@@ -581,8 +581,8 @@ export default function GlobalSettings() {
         <h3 className="text-sm font-extrabold uppercase tracking-wider text-black dark:text-white mb-4">Output Options</h3>
         <div data-tour="skip-title">
           <CheckboxField
-            label="Skip Title History"
-            description="Generate character_history.txt only — omits title_history.txt and removes the Title History upload requirement."
+            label="Print Placeholder History"
+            description="When on, title_history.txt contains placeholder title blocks (one per dynasty) — no Title History upload is required, and any uploaded title history is ignored. Turn off to use your uploaded title history (existing blocks preserved, generated holders merged in)."
             value={global_settings.ignore_title_generation}
             onChange={(v) => setGlobal({ ignore_title_generation: v })}
           />

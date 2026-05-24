@@ -210,7 +210,7 @@ export default function GanttChart() {
     return (
       <div className="p-12 text-sm text-gray-600 dark:text-gray-400 italic">
         {global_settings.ignore_title_generation
-          ? 'Skip Title History is on — no title_history.txt will be generated. Dynasties you define still produce character histories. Upload a title history file only if you want to fill gaps in existing title histories.'
+          ? 'Print Placeholder History is on — title_history.txt will contain placeholder title blocks only. Dynasties you define still produce character histories. Turn it off to use an uploaded title history and fill its gaps.'
           : 'Upload a title history file in the sidebar to start filling gaps in existing title histories.'}
       </div>
     );

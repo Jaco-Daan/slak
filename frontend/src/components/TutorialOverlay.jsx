@@ -23,7 +23,7 @@ const STEPS = [
   {
     sel: '[data-tour="skip-title"]',
     title: 'Title History',
-    body: 'Upload a title-history file to drive succession on real titles — or tick “Skip Title History” to generate characters under placeholder titles only.',
+    body: 'Upload a title-history file to drive succession on real titles — or tick “Print Placeholder History” to generate characters under placeholder titles only.',
     view: 'global',
   },
   {

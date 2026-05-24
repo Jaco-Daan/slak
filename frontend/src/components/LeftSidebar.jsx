@@ -68,7 +68,7 @@ export default function LeftSidebar() {
     : (!hasNames && !hasTitles && !skipTitles) ? 'Upload a Title History and a Name Lists file to generate.'
     : (!hasNames && hasNamesFile) ? 'Name list is empty — use format: list_id: name1, name2'
     : !hasNames ? 'Upload a Name Lists file to generate.'
-    : "Upload a Title History file, or tick 'Skip Title History' in Global Settings.";
+    : "Upload a Title History file, or tick 'Print Placeholder History' in Global Settings.";
 
   const onResetAll = () => {
     if (window.confirm('Reset everything? This clears all uploaded files, dynasties, title sequences, and settings.')) {
@@ -131,7 +131,7 @@ export default function LeftSidebar() {
           filename={parsed_files.titles_filename}
           onClear={clearParsedTitles}
           info={skipTitles
-            ? "Skip Title History is on — not required. Upload only if you want to configure title sequences."
+            ? "Print Placeholder History is on — upload not required, and any uploaded title history is ignored in favour of placeholders."
             : "Found in your mod under:\\history\\titles"}
         />
         <div data-tour="namelist">

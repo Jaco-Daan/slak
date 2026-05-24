@@ -470,8 +470,9 @@ def package_zip(world: WorldState) -> bytes:
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("character_history.txt", render_character_history(world))
         if world.payload.global_settings.ignore_title_generation:
-            # Skip mode: still emit placeholder title blocks (one per dynasty with no
-            # user-assigned title) so the user has copyable title-history scaffolding.
+            # "Print Placeholder History" mode (ignore_title_generation): emit placeholder
+            # title blocks (one per dynasty with no user-assigned title) so the user has
+            # copyable title-history scaffolding. Any uploaded title history is ignored here.
             placeholder_history = render_title_history(world, only_ids=world.placeholder_title_ids)
             zf.writestr("title_history.txt", placeholder_history)
         else:
