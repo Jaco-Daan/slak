@@ -61,7 +61,7 @@ def run_generation(payload_json: dict) -> dict:
 
     return {
         "characters": len(world.characters),
-        "titles_with_history": len(world.title_holders),
+        "titles_with_history": len(set(world.title_holders) | set(world.injected_holders)),
         "family_tree": family_tree,
         "zip_b64": base64.b64encode(zip_bytes).decode("ascii"),
     }

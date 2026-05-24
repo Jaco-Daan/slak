@@ -379,6 +379,12 @@ class WorldState:
         self.current_dynasty: dict[str, str] = {}
         # Set of title IDs the user explicitly configured (not cascade-inherited)
         self.explicit_title_ids: set[str] = set()
+        # Title IDs that came from an uploaded history file (have existing blocks).
+        # Their output is produced by text-merge, not by render_title_history.
+        self.uploaded_title_ids: set[str] = set()
+        # Generated gap-fill holders to inject into the original uploaded text:
+        # {title_id: [(date_str, holder_id)]}.
+        self.injected_holders: dict[str, list[tuple[str, str]]] = {}
         # Synthetic placeholder titles created for dynasties with no user-assigned title
         self.placeholder_title_ids: set[str] = set()
         # All unique dynasty/house IDs used in the simulation
@@ -769,6 +775,8 @@ def run_simulation(
     world.titles = titles
     world.explicit_title_ids = set(payload.title_sequences.keys())
     world.placeholder_title_ids = set()
+    # Titles present in the uploaded history file own their output via text-merge.
+    world.uploaded_title_ids = {t for t in titles if isinstance(t, str)}
 
     settings = payload.global_settings
     modifiers = payload.life_cycle
@@ -798,6 +806,12 @@ def run_simulation(
         for seq in seq_list
         if seq.dynasty_id and seq.dynasty_id != GAP_DYNASTY_ID
     }
+    # Dynasties assigned to fill a title gap generate their line in that gap, so
+    # they don't also need a standalone placeholder title.
+    for fills in (payload.title_gap_fills or {}).values():
+        for gf in fills:
+            if gf.dynasty_id:
+                used_dynasty_ids.add(gf.dynasty_id)
     placeholder_duration = max(1, settings.end_year - settings.start_year + 1)
     for dyn_id in world.dynasty_defs.keys():
         if dyn_id in used_dynasty_ids:
@@ -821,7 +835,7 @@ def run_simulation(
         world.explicit_title_ids.add(placeholder_tid)
         world.placeholder_title_ids.add(placeholder_tid)
 
-    if not title_state:
+    if not title_state and not payload.title_gap_fills:
         logger("No title sequences configured and no dynasties defined — nothing to simulate.")
         return world
 
@@ -1202,6 +1216,12 @@ def run_simulation(
 
     # Optional post-passes. Both pick dates inside a character's lifespan, so they
     # run after _kill_survivors has stamped every character with a death date.
+    # Fill user-assigned gaps in uploaded title history with confined dynastic
+    # lines. Runs before the flavour passes so gap-fill rulers can also receive
+    # nicknames/relationships/secrets like any other character.
+    if payload.title_gap_fills:
+        _fill_title_gaps(world, payload)
+
     if settings.enable_relationships:
         _generate_relationships(world)
     if settings.enable_secrets:
@@ -1210,6 +1230,72 @@ def run_simulation(
         _generate_nicknames(world)
 
     return world
+
+
+# ---------------------------------------------------------------------------
+# Title gap-fill (existing-history awareness)
+# ---------------------------------------------------------------------------
+
+_GAP_GENERATION_YEARS = 30  # reign length per holder in a gap-fill line
+
+
+def _fill_title_gaps(world: WorldState, payload: SimulationPayload) -> None:
+    """For each user-assigned gap, generate a confined dynastic line of holders
+    within [gap_start, gap_end] (clamped to the sim window) and record them in
+    `world.injected_holders` for text-injection. The line's characters are added
+    to the world like any other (so they appear in character_history)."""
+    rng = world.rng
+    settings = payload.global_settings
+    for tid, fills in payload.title_gap_fills.items():
+        for gf in fills:
+            ddef = world.dynasty_defs.get(gf.dynasty_id)
+            gstart = max(gf.gap_start_year, settings.start_year)
+            gend = min(gf.gap_end_year, settings.end_year)
+            if gend - gstart <= 0:
+                continue
+            gl = gf.gender_law or (ddef.gender_law if ddef else None)
+            prev: Optional[Character] = None
+            i = 0
+            while True:
+                accession = gstart + i * _GAP_GENERATION_YEARS
+                if accession >= gend:
+                    break
+                culture, religion = (
+                    _dynasty_culture_faith(ddef, accession) if ddef
+                    else ("default_culture", "default_faith")
+                )
+                parent_kwargs = {}
+                if prev is not None:
+                    parent_kwargs = (
+                        {"mother_id": prev.id} if prev.is_female else {"father_id": prev.id}
+                    )
+                holder = world.make_character(
+                    dynasty=gf.dynasty_id,
+                    culture=culture,
+                    religion=religion,
+                    is_female=_ruler_sex_is_female(gl, rng),
+                    birth_year=accession - 30,
+                    **parent_kwargs,
+                )
+                # Childhood + personality traits (the main loop's age-milestone
+                # passes already ran, so assign them here for parity).
+                _assign_childhood_trait(holder, rng)
+                bp = holder.birth_date.split(".")
+                holder.personality_trait_date = _date(int(bp[0]) + 16, int(bp[1]), int(bp[2]))
+                _assign_personality_traits(holder, world.personality_traits_config, rng)
+
+                hold_year = gstart if i == 0 else accession
+                world.injected_holders.setdefault(tid, []).append(
+                    (_date(hold_year, rng.randint(1, 12), rng.randint(1, 28)), holder.id)
+                )
+
+                next_accession = gstart + (i + 1) * _GAP_GENERATION_YEARS
+                death_year = gend if next_accession >= gend else next_accession
+                holder.is_alive = False
+                holder.death_date = _date(death_year, rng.randint(1, 12), rng.randint(1, 28))
+                holder.death_reason = "death_natural_causes"
+                prev = holder
+                i += 1
 
 
 # ---------------------------------------------------------------------------

@@ -9,7 +9,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from .schemas import SimulationPayload
 from .generation import run_generation
 from .parser import (
-    parse, extract_title_ids_from_history, extract_genetic_traits, extract_death_reasons,
+    parse, extract_title_ids_from_history, extract_title_holder_events,
+    extract_genetic_traits, extract_death_reasons,
     extract_name_lists, extract_dynasties, extract_religions, extract_secrets, extract_cultures,
 )
 
@@ -45,6 +46,7 @@ async def upload_titles(file: UploadFile = File(...)) -> dict:
     return {
         "filename": file.filename,
         "title_ids": extract_title_ids_from_history(ast),
+        "holder_events": extract_title_holder_events(ast),
         "raw": text,
     }
 

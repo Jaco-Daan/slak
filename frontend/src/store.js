@@ -95,6 +95,7 @@ function _defaultParsedFiles() {
     secrets_txt: null,
     // UI-only previews
     titles: [],             // flat list of title IDs from title history upload
+    title_holder_events: {},// { titleId: [{date, year, vacant}] } from uploaded title history — drives locked periods + gap detection
     traits: [],             // genetic trait registry
     deaths: [],             // death reasons
     religions: {},          // { faith_id: marital_doctrine }
@@ -125,6 +126,10 @@ export const useStore = create(persist((set, get) => ({
 
   // User-defined dynasty definitions (Jis_Revised_2)
   dynasty_definitions: [],
+
+  // Per-gap dynasty assignments for uploaded titles with existing history.
+  // { [titleId]: [{ gap_start_year, gap_end_year, dynasty_id }] }
+  title_gap_fills: {},
 
   // UI navigation
   active_view: 'global',  // 'global' | 'lifecycle' | 'titles' | 'tree'
@@ -176,11 +181,13 @@ export const useStore = create(persist((set, get) => ({
       ...s.parsed_files,
       titles_txt: data.raw,
       titles: data.title_ids,
+      title_holder_events: data.holder_events || {},
       titles_filename: data.filename,
     },
   })),
   clearParsedTitles: () => set((s) => ({
-    parsed_files: { ...s.parsed_files, titles_txt: null, titles: [], titles_filename: null },
+    parsed_files: { ...s.parsed_files, titles_txt: null, titles: [], title_holder_events: {}, titles_filename: null },
+    title_gap_fills: {},
   })),
   setParsedTraits: (data) => set((s) => ({
     parsed_files: {
@@ -261,6 +268,20 @@ export const useStore = create(persist((set, get) => ({
   setSequences: (titleId, sequences) => set((s) => ({
     title_sequences: { ...s.title_sequences, [titleId]: sequences },
   })),
+
+  // Assign (or clear, when dynastyId is falsy) a dynasty to a specific gap of a
+  // title's existing history. Gaps are identified by their start/end years.
+  setTitleGapFill: (titleId, gapStart, gapEnd, dynastyId) => set((s) => {
+    const existing = (s.title_gap_fills[titleId] || []).filter(
+      (g) => !(g.gap_start_year === gapStart && g.gap_end_year === gapEnd)
+    );
+    const next = dynastyId
+      ? [...existing, { gap_start_year: gapStart, gap_end_year: gapEnd, dynasty_id: dynastyId }]
+      : existing;
+    const out = { ...s.title_gap_fills };
+    if (next.length) out[titleId] = next; else delete out[titleId];
+    return { title_gap_fills: out };
+  }),
 
   reorderBlock: (titleId, fromIdx, toIdx) => set((s) => {
     if (fromIdx === toIdx) return s;
@@ -419,6 +440,7 @@ export const useStore = create(persist((set, get) => ({
     life_cycle: _defaultLifeCycle(),
     parsed_files: _defaultParsedFiles(),
     title_sequences: {},
+    title_gap_fills: {},
     dynasty_definitions: [],
     task_state: null, task_result: null, task_error: null, tree_data: null, download_url: null,
   }),
@@ -441,6 +463,7 @@ export const useStore = create(persist((set, get) => ({
         secrets_txt: s.parsed_files.secrets_txt,
       },
       title_sequences: s.title_sequences,
+      title_gap_fills: s.title_gap_fills,
       // Serialize dynasty languages from object form [{id,start_year,end_year}] to "id,start,end" strings
       // Apply culture/faith fallbacks when fields are left blank
       dynasty_definitions: s.dynasty_definitions.map((d) => ({
@@ -470,6 +493,7 @@ export const useStore = create(persist((set, get) => ({
     life_cycle: s.life_cycle,
     parsed_files: s.parsed_files,
     title_sequences: s.title_sequences,
+    title_gap_fills: s.title_gap_fills,
     dynasty_definitions: s.dynasty_definitions,
     simplified_mode: s.simplified_mode,
     // dark_mode is intentionally NOT persisted here — it derives from the dedicated

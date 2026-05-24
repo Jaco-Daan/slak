@@ -137,6 +137,18 @@ class DynastySequence(BaseModel):
     conversions: list[ConversionEvent] = Field(default_factory=list)
 
 
+class TitleGapFill(BaseModel):
+    """A user assignment of a dynasty to fill one >50yr gap in a title's existing
+    (uploaded) history. The generator produces a confined dynastic line of
+    holders within [gap_start_year, gap_end_year] and injects them into the
+    original title-history text without touching the existing blocks."""
+    gap_start_year: int
+    gap_end_year: int
+    dynasty_id: str
+    succession: Optional[str] = None    # falls back to the dynasty's own law if unset
+    gender_law: Optional[str] = None
+
+
 class ParsedFileData(BaseModel):
     """Backend receives raw .txt file contents and re-parses for safety."""
     titles_txt: Optional[str] = None
@@ -157,6 +169,9 @@ class SimulationPayload(BaseModel):
     parsed_files: ParsedFileData
     title_sequences: dict[str, list[DynastySequence]] = Field(default_factory=dict)
     dynasty_definitions: list[DynastyDefinition] = Field(default_factory=list)
+    # Per-gap dynasty assignments for titles that have existing uploaded history.
+    # Keyed by title id; each entry fills one >50yr vacant gap.
+    title_gap_fills: dict[str, list[TitleGapFill]] = Field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------

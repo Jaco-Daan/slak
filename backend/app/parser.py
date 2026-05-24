@@ -199,6 +199,101 @@ def extract_title_ids_from_history(ast: dict) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# Title holder-occupancy + gap extraction (existing-history awareness)
+# ---------------------------------------------------------------------------
+
+_DATE_RE = re.compile(r"^\d+\.\d+\.\d+$")
+
+
+def _date_year(date_str: str) -> int:
+    return int(date_str.split(".")[0])
+
+
+def extract_title_holder_events(ast: dict) -> dict[str, list[dict]]:
+    """For each title in a title-history AST, return its holder-change events,
+    chronologically sorted: ``[{"date": "YYYY.M.D", "year": int, "vacant": bool}]``.
+
+    Only date blocks that set ``holder`` are events — blocks that only set
+    government/liege/name/development don't change who holds the title and are
+    skipped. ``vacant`` is True only when ``holder = 0`` (an explicit vacancy);
+    any other holder value (a character line, ``k_wastelands_holder``, …) is an
+    occupied, locked period that the generator must not overwrite.
+    """
+    result: dict[str, list[dict]] = {}
+    for tid, body in ast.items():
+        if not (isinstance(tid, str) and tid.startswith(TITLE_PREFIXES)):
+            continue
+        if not isinstance(body, dict):
+            continue
+        events: list[dict] = []
+        for date_str, block in body.items():
+            if not (isinstance(date_str, str) and _DATE_RE.match(date_str)):
+                continue
+            # Duplicate dates collapse into a list of blocks in the AST.
+            for b in (block if isinstance(block, list) else [block]):
+                if not isinstance(b, dict) or "holder" not in b:
+                    continue
+                holder = b["holder"]
+                if isinstance(holder, list):  # duplicate holder key — take the last
+                    holder = holder[-1]
+                events.append({
+                    "date": date_str,
+                    "year": _date_year(date_str),
+                    "vacant": str(holder) == "0",
+                })
+        events.sort(key=lambda e: tuple(int(p) for p in e["date"].split(".")))
+        result[tid] = events
+    return result
+
+
+def compute_title_gaps(
+    events: list[dict],
+    start_year: int,
+    end_year: int,
+    min_gap_years: int = 50,
+) -> list[dict]:
+    """Vacant stretches within ``[start_year, end_year]`` longer than
+    ``min_gap_years`` — the fillable gaps. A title is vacant before its first
+    holder event and during any ``holder = 0`` span. Returns
+    ``[{"start_year": int, "end_year": int}]`` (gaps of exactly 50 years or
+    shorter are excluded — too short to be worth filling)."""
+    if end_year <= start_year:
+        return []
+
+    # Collapse events to state-change points (vacant flips only).
+    changes: list[tuple[int, bool]] = []
+    prev: bool | None = None
+    for e in sorted(events, key=lambda x: x["year"]):
+        if prev is None or e["vacant"] != prev:
+            changes.append((e["year"], e["vacant"]))
+            prev = e["vacant"]
+
+    # State at start_year: vacant unless a holder was established earlier.
+    state_vacant = True
+    future: list[tuple[int, bool]] = []
+    for (y, vac) in changes:
+        if y <= start_year:
+            state_vacant = vac
+        else:
+            future.append((y, vac))
+
+    # Walk vacancy segments across the window.
+    gaps: list[dict] = []
+    cursor = start_year
+    state = state_vacant
+    for (y, vac) in future:
+        if y >= end_year:
+            break
+        if state and (y - cursor) > min_gap_years:
+            gaps.append({"start_year": cursor, "end_year": y})
+        cursor = y
+        state = vac
+    if state and (end_year - cursor) > min_gap_years:
+        gaps.append({"start_year": cursor, "end_year": end_year})
+    return gaps
+
+
+# ---------------------------------------------------------------------------
 # Trait + Death extraction (spec 5.4)
 # ---------------------------------------------------------------------------
 

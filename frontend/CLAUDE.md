@@ -32,7 +32,9 @@ Single source of truth. Key sections:
 | `global_settings` | object | Simulation bounds + genetics/output flags |
 | `life_cycle` | object | Fertility/mortality modifiers |
 | `parsed_files` | object | Raw txt strings + extracted previews from all upload types |
-| `title_sequences` | object | `{[titleId]: DynastySequence[]}` — Gantt chart state |
+| `title_sequences` | object | `{[titleId]: DynastySequence[]}` — legacy per-title block model (still in schema; superseded for uploaded titles by gap fills) |
+| `title_gap_fills` | object | `{[titleId]: [{gap_start_year, gap_end_year, dynasty_id}]}` — per-gap dynasty assignment for uploaded-history titles; sent in `buildPayload` |
+| `parsed_files.title_holder_events` | object | `{[titleId]: [{date, year, vacant}]}` from `/upload/titles` — drives the Gantt's locked bars + gap detection |
 | `dynasty_definitions` | array | User-defined dynasties with full properties |
 | `tutorial_enabled` | bool | Master switch for the onboarding tour (persisted); toggled by the header "Tutorial" checkbox. Finishing/skipping sets it false |
 | `tutorial_step` | number | Current coachmark index (ephemeral, resets to 0) |
@@ -161,14 +163,13 @@ Note: `uploadDynasties` does **not** exist — dynasties are user-defined via th
 
 ---
 
-## GanttChart
+## GanttChart (existing-history / gap model)
 
-- `PX_PER_YEAR = 6`, `ROW_HEIGHT = 48`, `LABEL_WIDTH = 240`
-- Titles shown as collapsible rows; depth derived from the title tree
-- Each `DynastySequence` is a draggable block; right-edge drag updates `duration_value` in the store
-- `_start_offset` is computed at render time from cumulative durations — not stored
-- Generation duration type approximates 1 generation ≈ 25 years for visual positioning only
-- Transition popover appears on clicking the block boundary; offers `marriage / usurpation / extinction` selection
+Rewritten around uploaded title history. Each title row renders, positioned by absolute year (`x = (year - start_year) * pxPerYear`):
+- **Locked grey bars** for existing occupied periods (any non-`0` holder) — read-only, never overwritten.
+- **Amber dashed gap dropdowns** for vacant stretches >50yr within the Start/End window — one `<select>` per gap; choosing a dynasty calls `setTitleGapFill(titleId, gapStart, gapEnd, dynastyId)`.
+
+`computeSegments(events, start, end, minGap=50)` mirrors the backend `compute_title_gaps`/occupancy split exactly (verify both stay in sync). Gaps recompute live when Start/End years change. The legacy draggable-block model (`DynastyBlock`, drag/reorder, transition popover) was removed — assignment is now per-gap. `ROW_HEIGHT = 48`, `LABEL_WIDTH = 240`, `pxPerYear` auto-fits the container.
 
 ---
 

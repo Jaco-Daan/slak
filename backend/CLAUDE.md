@@ -24,7 +24,7 @@ See root `CLAUDE.md` for architecture overview, commands, and coupling points.
 | Method | Path | Description |
 |---|---|---|
 | GET | `/health` | Returns `{"status":"ok"}` |
-| POST | `/upload/titles` | Parses title history → `{filename, title_ids (flat list), raw}` |
+| POST | `/upload/titles` | Parses title history → `{filename, title_ids (flat list), holder_events (per-title occupancy), raw}` |
 | POST | `/upload/traits` | Parses genetic traits → `{filename, traits (list), raw}` |
 | POST | `/upload/deaths` | Parses death reasons → `{filename, deaths (list), raw}` |
 | POST | `/upload/names` | Parses name lists → `{filename, name_lists (dict), raw}` |
@@ -61,6 +61,8 @@ See root `CLAUDE.md` for architecture overview, commands, and coupling points.
 |---|---|---|
 | `transform_titles(ast)` | top-level AST dict | Recursive title tree: `{id, tier, is_landed, metadata, children}` |
 | `extract_title_ids_from_history(ast)` | title history AST dict | Flat list of title ID strings (top-level keys) |
+| `extract_title_holder_events(ast)` | title history AST dict | `{title_id: [{date, year, vacant}]}` — chronological holder-change events; `vacant` only when `holder = 0` (any other holder, incl. `k_wastelands_holder`, is occupied/locked) |
+| `compute_title_gaps(events, start, end, min_gap=50)` | one title's events + window | Vacant stretches within `[start,end]` longer than 50 yrs — the fillable gaps. Mirrored in JS in `GanttChart.jsx` (`computeSegments`) |
 | `extract_genetic_traits(ast)` | top-level AST dict | List of `{id, group, level, birth_chance, random_creation, opposites}` |
 | `extract_death_reasons(ast)` | top-level AST dict | List of `{id, is_natural, required_trait}` |
 | `extract_name_lists(ast)` | top-level AST dict | Dict: `{culture_male: [...], culture_female: [...], default_male: [...], default_female: [...]}` |
@@ -275,6 +277,8 @@ SimulationPayload
 ├── title_sequences: dict[title_id → list[DynastySequence]]
 │   └── {dynasty_id, duration_type, duration_value, transition_method,
 │        government_type, liege_title_id, lowborn_spouses_only, conversions[]}
+├── title_gap_fills: dict[title_id → list[TitleGapFill]]   ← per-gap dynasty assignment for uploaded-history titles
+│   └── {gap_start_year, gap_end_year, dynasty_id, succession?, gender_law?}
 └── dynasty_definitions: list[DynastyDefinition]
     └── {id, name, motto, start_year, end_year,
          culture_faith_periods[{start_year, culture, faith}],
@@ -314,7 +318,7 @@ SimulationPayload
 Renders `WorldState` into files packed into a ZIP:
 
 - `character_history.txt` — characters grouped by dynasty (sorted alphabetically by dynasty ID), each group preceded by a comment header; bastards appended last
-- `title_history.txt` — one block per **explicitly user-configured title** only (cascade-inherited child titles are filtered out); omitted entirely if `ignore_title_generation = true`
+- `title_history.txt` — one block per **explicitly user-configured title** only (cascade-inherited child titles are filtered out); omitted entirely if `ignore_title_generation = true`. **Existing-history awareness:** titles present in the uploaded file (`world.uploaded_title_ids`) are reproduced **verbatim** and the generated gap-fill holders are *injected* into them via `merge_title_history` (text-level insertion before each title's closing brace — comments, `government`, `liege`, etc. are never touched). `render_title_history` skips uploaded titles; non-uploaded (user-added/placeholder) blocks are appended after the merged original. Gap-fill holders come from `_fill_title_gaps` (sim) using `payload.title_gap_fills`; each fill is a confined dynastic line within a >50yr gap, clamped to the Start/End window, stored in `world.injected_holders`
 - `00_dynasties.txt` — Paradox dynasty definitions; generated from `world.dynasty_ids_used`, looked up against `world.dynasty_defs` for real culture and motto
 - `dynasty_names_l_english.yml` — UTF-8 BOM localization; dynasty display names only (`dynn_X: "..."`)
 - `dynasty_mottos_l_english.yml` — UTF-8 BOM localization; dynasty mottos only (`dynn_X_motto: "..."`). Names and mottos are split into two files; the `_l_english` suffix is mandatory for CK3 to load the localization. Both fall back to `#DEBUG TEMP#!` if blank.

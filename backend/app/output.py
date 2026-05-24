@@ -6,6 +6,7 @@ import zipfile
 
 from .simulation import WorldState
 from .schemas import Character
+from .parser import TITLE_PREFIXES
 
 # Secrets emitted with the block form `add_secret = { type = X target = ... }`;
 # every other secret uses the bare form `add_secret = secret_X`.
@@ -270,6 +271,9 @@ def render_title_history(world: WorldState, only_ids: set | None = None) -> str:
 
     Only titles the user directly configured (not cascade-inherited children)
     appear in the output. This prevents hundreds of unwanted title entries.
+    Titles that came from an uploaded history file are skipped here — their
+    output is produced by `merge_title_history` (which preserves the original
+    blocks verbatim and injects generated gap-fill holders).
 
     If `only_ids` is given, restrict output to those title IDs (used in
     Skip-Title-History mode to emit just the placeholder titles).
@@ -278,6 +282,9 @@ def render_title_history(world: WorldState, only_ids: set | None = None) -> str:
     for title_id, holders in world.title_holders.items():
         # Skip cascade-inherited titles — only emit user-configured ones
         if world.explicit_title_ids and title_id not in world.explicit_title_ids:
+            continue
+        # Skip uploaded titles unless explicitly requested (handled by merge)
+        if only_ids is None and title_id in world.uploaded_title_ids:
             continue
         if only_ids is not None and title_id not in only_ids:
             continue
@@ -291,6 +298,77 @@ def render_title_history(world: WorldState, only_ids: set | None = None) -> str:
             out.append("    }")
         out.append("}")
     return "\n".join(out) + "\n"
+
+
+def _title_block_close_indices(text: str) -> dict[str, int]:
+    """Map each top-level title id to the index of its block's closing `}` in
+    the raw text. Comments (`# … EOL`) and quoted strings are skipped, so braces
+    inside commented-out blocks (common in real mod files) don't miscount depth."""
+    result: dict[str, int] = {}
+    i, n = 0, len(text)
+    depth = 0
+    pending_name: str | None = None
+    block_stack: list[str | None] = []
+    while i < n:
+        ch = text[i]
+        if ch == "#":
+            j = text.find("\n", i)
+            i = n if j == -1 else j
+            continue
+        if ch == '"':
+            j = text.find('"', i + 1)
+            i = n if j == -1 else j + 1
+            continue
+        if ch == "{":
+            block_stack.append(pending_name if depth == 0 else None)
+            depth += 1
+            pending_name = None
+            i += 1
+            continue
+        if ch == "}":
+            depth -= 1
+            opened = block_stack.pop() if block_stack else None
+            if depth == 0 and opened:
+                result[opened] = i
+            i += 1
+            continue
+        if ch.isspace() or ch == "=":
+            i += 1
+            continue
+        # token
+        j = i
+        while j < n and not text[j].isspace() and text[j] not in '{}="#':
+            j += 1
+        token = text[i:j]
+        if depth == 0 and token.startswith(TITLE_PREFIXES):
+            pending_name = token
+        i = j
+    return result
+
+
+def merge_title_history(original_text: str, injected: dict[str, list[tuple[str, str]]]) -> str:
+    """Return the original uploaded title-history text with generated gap-fill
+    holder blocks inserted before each affected title's closing brace. Existing
+    blocks (holders, government, liege, names, comments) are left byte-for-byte
+    intact — CK3 applies date blocks by date, so insertion order is irrelevant."""
+    if not injected:
+        return original_text
+    closes = _title_block_close_indices(original_text)
+    inserts: list[tuple[int, str]] = []
+    for tid, holders in injected.items():
+        idx = closes.get(tid)
+        if idx is None or not holders:
+            continue
+        sorted_h = sorted(holders, key=_date_sort_key)
+        block_txt = "".join(
+            f"\t{date} = {{\n\t\tholder = {hid}\n\t}}\n" for date, hid in sorted_h
+        )
+        inserts.append((idx, block_txt))
+    out = original_text
+    for idx, block_txt in sorted(inserts, key=lambda x: x[0], reverse=True):
+        prefix = "" if (idx > 0 and out[idx - 1] == "\n") else "\n"
+        out = out[:idx] + prefix + block_txt + out[idx:]
+    return out
 
 
 def _pretty_name(dynasty_id: str) -> str:
@@ -380,7 +458,19 @@ def package_zip(world: WorldState) -> bytes:
             placeholder_history = render_title_history(world, only_ids=world.placeholder_title_ids)
             zf.writestr("title_history.txt", placeholder_history)
         else:
-            zf.writestr("title_history.txt", render_title_history(world))
+            # Generated blocks for non-uploaded (user-added/placeholder) titles.
+            generated = render_title_history(world)
+            original = world.payload.parsed_files.titles_txt
+            if original:
+                # Preserve the uploaded file verbatim, injecting gap-fill holders,
+                # then append any generated non-uploaded title blocks.
+                merged = merge_title_history(original, world.injected_holders)
+                if generated.strip():
+                    merged = merged.rstrip() + "\n\n" + generated
+                title_history = merged
+            else:
+                title_history = generated
+            zf.writestr("title_history.txt", title_history)
         if world.dynasty_ids_used:
             zf.writestr("00_dynasties.txt", render_dynasties_txt(world))
             # UTF-8 BOM required by CK3 for .yml localization files. Names and
