@@ -115,6 +115,8 @@ class LifeCycleModifiers(BaseModel):
     female_bastard_chance: float = 0.02
     dynasty_soft_cap: int = 50  # living-member count beyond which fertility damps toward zero
     average_lifespan: int = 70  # mean age at death; calibrates the mortality curve
+    average_marriage_age: int = 22  # age dynasty members tend to marry (peak of the marriage hazard)
+    gap_between_children: int = 2  # minimum years between a couple's successive births
 
 
 class ConversionEvent(BaseModel):

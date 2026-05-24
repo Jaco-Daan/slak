@@ -10,6 +10,7 @@ Implements:
 
 from __future__ import annotations
 import re
+import math
 import random
 from typing import Callable, Optional
 
@@ -880,6 +881,18 @@ def run_simulation(
             if legitimate_children >= modifiers.max_children_per_couple:
                 continue
 
+            # Enforce a minimum gap (years) between successive legitimate births.
+            if modifiers.gap_between_children > 0:
+                last_birth_year = max(
+                    (int(world.characters[cid].birth_date.split(".")[0])
+                     for cid in char.child_ids
+                     if cid in world.characters and not world.characters[cid].is_bastard),
+                    default=None,
+                )
+                if (last_birth_year is not None
+                        and (year - last_birth_year) < modifiers.gap_between_children):
+                    continue
+
             fertility = modifiers.base_fertility_rate * char.fertility_multiplier * spouse.fertility_multiplier
             child_house_hint = _char_dynasty_id(char) or _char_dynasty_id(spouse)
             if child_house_hint:
@@ -935,9 +948,22 @@ def run_simulation(
             if not _char_dynasty_id(char):
                 continue  # skip lowborn — they don't actively seek marriage
             age = _age(char, year)
-            if age < 16 or age > 40:
+            # Marriage hazard peaks at average_marriage_age. The rise toward the
+            # target is steep (narrow left spread) so few members marry well before
+            # it, which keeps the realised mean marriage age close to the setting;
+            # the decay after the peak is gentler so late marriages remain possible.
+            # Marriages still never start before 16.
+            avg_marry = max(16, modifiers.average_marriage_age)
+            if age < 16 or age > avg_marry + 30:
                 continue
-            marriage_chance = 0.10 * _size_factor(_char_dynasty_id(char)) * _kinship_factor(char.id)
+            spread = max(2.5, avg_marry * 0.12) if age <= avg_marry else max(4.0, avg_marry * 0.25)
+            peak = 0.45
+            age_factor = math.exp(-((age - avg_marry) ** 2) / (2 * spread ** 2))
+            marriage_chance = (
+                peak * age_factor
+                * _size_factor(_char_dynasty_id(char))
+                * _kinship_factor(char.id)
+            )
             if rng.random() < marriage_chance:
                 world.make_lowborn_spouse_and_marry(char, year)
 
@@ -1112,6 +1138,22 @@ def _lifespans_overlap(c: Character, o: Character) -> bool:
     return max(cb, ob) <= min(cd, od)
 
 
+def _date_tuple(date_str: Optional[str]) -> tuple:
+    try:
+        return tuple(int(p) for p in date_str.split("."))
+    except (AttributeError, ValueError):
+        return (9999,)
+
+
+def _clamp_event_date(date_str: str, char: Character) -> str:
+    """Ensure a generated event date never lands after the character's death.
+    The death block must always be the chronological last entry in a character's
+    history; an event dated after death would never fire in-game anyway."""
+    if char.death_date and _date_tuple(date_str) > _date_tuple(char.death_date):
+        return char.death_date
+    return date_str
+
+
 def _pick_contemporary(c: Character, pool: list, rng: random.Random) -> Optional[Character]:
     """Return a random character from pool whose lifespan overlaps c's (not c)."""
     cands = [o for o in pool if o.id != c.id and _lifespans_overlap(c, o)]
@@ -1151,7 +1193,7 @@ def _generate_relationships(world: WorldState) -> None:
             kind = rng.choice(["bully", "crush"])
             had_bully, had_crush = kind == "bully", kind == "crush"
             c.relationships.append({
-                "date": _rand_date(ch_lo, ch_hi),
+                "date": _clamp_event_date(_rand_date(ch_lo, ch_hi), c),
                 "effect": RELATIONSHIP_EFFECTS[kind],
                 "target_id": o.id,
             })
@@ -1177,7 +1219,7 @@ def _generate_relationships(world: WorldState) -> None:
                 key = "soulmate"
                 soulmate_used.update({c.id, o.id})
             c.relationships.append({
-                "date": _rand_date(ad_lo, ad_hi),
+                "date": _clamp_event_date(_rand_date(ad_lo, ad_hi), c),
                 "effect": RELATIONSHIP_EFFECTS[key],
                 "target_id": o.id,
             })
@@ -1224,7 +1266,9 @@ def _generate_secrets(world: WorldState) -> None:
             continue
 
         entry = {
-            "date": _date(rng.randint(lo, hi), rng.randint(1, 12), rng.randint(1, 28)),
+            "date": _clamp_event_date(
+                _date(rng.randint(lo, hi), rng.randint(1, 12), rng.randint(1, 28)), c
+            ),
             "type": stype,
         }
         if partner is not None:

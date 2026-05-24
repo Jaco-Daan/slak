@@ -79,6 +79,8 @@ function _defaultLifeCycle() {
     female_bastard_chance: 0.02,
     dynasty_soft_cap: 50,
     average_lifespan: 70,
+    average_marriage_age: 22,
+    gap_between_children: 2,
   };
 }
 

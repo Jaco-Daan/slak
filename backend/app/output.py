@@ -12,11 +12,25 @@ from .schemas import Character
 _SECRET_TARGET_FORM = {"secret_murder", "secret_murder_attempt", "secret_lover"}
 
 
+def _date_key(date_str: str) -> tuple:
+    """Parse 'YYYY.M.D' into a comparable tuple for chronological sorting.
+    A plain string sort mis-orders months/days, so dates are compared as ints."""
+    try:
+        return tuple(int(p) for p in date_str.split("."))
+    except (AttributeError, ValueError):
+        return (9999,)
+
+
 def _format_character(c: Character, adopted_children: list | None = None) -> str:
     """Format a single character per spec 9.1.
 
     `adopted_children` is the list of characters this character adopted; each
     produces an `adopt` effect block dated at the adopted child's birth.
+
+    Dated blocks are emitted in strict chronological order: the birth block is
+    always first and the death block always last, with every other dated event
+    (marriages, adoptions, relationships, secrets, personality traits,
+    employment) sorted by date in between.
     """
     adopted_children = adopted_children or []
     lines: list[str] = [f"{c.id} = {{"]
@@ -37,15 +51,16 @@ def _format_character(c: Character, adopted_children: list | None = None) -> str
         lines.append("    female = yes")
         lines.append("")
 
-    # Adopted heirs are foundlings in CK3 — no biological parent lines; the
-    # adopting parent records an `adopt` effect instead (see below).
-    if not c.is_adopted:
-        if c.father_id:
-            lines.append(f"    father = {c.father_id}")
-        if c.mother_id:
-            lines.append(f"    mother = {c.mother_id}")
-        if c.father_id or c.mother_id:
-            lines.append("")
+    # Father/mother are ALWAYS written, including for adopted heirs. The blood
+    # link must persist in CK3 start dates where the adopting parent is not alive
+    # (otherwise the heir appears unconnected). The adopter still records an
+    # `adopt` effect at the heir's birth (see adopted_children below).
+    if c.father_id:
+        lines.append(f"    father = {c.father_id}")
+    if c.mother_id:
+        lines.append(f"    mother = {c.mother_id}")
+    if c.father_id or c.mother_id:
+        lines.append("")
 
     # Genetic traits (top-level, no date block)
     if c.is_bastard:
@@ -58,86 +73,113 @@ def _format_character(c: Character, adopted_children: list | None = None) -> str
     if c.is_bastard or c.traits or c.childhood_trait:
         lines.append("")
 
-    # Marriage events (sorted chronologically; before birth block)
-    for marriage in sorted(c.marriages, key=lambda m: m["date"]):
-        lines.append(f"    {marriage['date']} = {{")
-        lines.append(f"        {marriage['type']} = {marriage['spouse_id']}")
-        lines.append("    }")
-        lines.append("")
+    # ------------------------------------------------------------------
+    # Collect every dated block as (date_key, block_lines), then sort.
+    # Birth is pinned first and death last regardless of any malformed dates.
+    # ------------------------------------------------------------------
+    middle: list[tuple[tuple, list[str]]] = []
 
-    # Birth block — with optional learn_language effect
-    lines.append(f"    {c.birth_date} = {{")
-    lines.append("        birth = yes")
-    if c.birth_languages:
-        lines.append("        effect = {")
-        for lang in c.birth_languages:
-            lines.append(f"            learn_language = {lang}")
-        lines.append("        }")
-    lines.append("    }")
+    # Marriage events
+    for marriage in c.marriages:
+        middle.append((_date_key(marriage["date"]), [
+            f"    {marriage['date']} = {{",
+            f"        {marriage['type']} = {marriage['spouse_id']}",
+            "    }",
+        ]))
 
     # Adoption effects — this character adopts each heir at the heir's birth date.
-    for child in sorted(adopted_children, key=lambda ch: ch.birth_date):
-        lines.append("")
-        lines.append(f"    {child.birth_date} = {{")
-        lines.append("        effect = {")
-        lines.append(f"            adopt = character:{child.id}")
-        lines.append("")
-        lines.append("            create_character_memory = {")
-        lines.append("                type = adopted_a_child")
-        lines.append("                participants = {")
-        lines.append(f"                    child = character:{child.id}")
-        lines.append("                }")
-        lines.append("            }")
-        lines.append("        }")
-        lines.append("    }")
+    for child in adopted_children:
+        middle.append((_date_key(child.birth_date), [
+            f"    {child.birth_date} = {{",
+            "        effect = {",
+            f"            adopt = character:{child.id}",
+            "",
+            "            create_character_memory = {",
+            "                type = adopted_a_child",
+            "                participants = {",
+            f"                    child = character:{child.id}",
+            "                }",
+            "            }",
+            "        }",
+            "    }",
+        ]))
 
     # Relationship effects (dated) — set_relation_friend/rival/lover/etc.
-    for rel in sorted(c.relationships, key=lambda r: r["date"]):
-        lines.append("")
-        lines.append(f"    {rel['date']} = {{")
-        lines.append("        effect = {")
-        lines.append(f"            {rel['effect']} = character:{rel['target_id']}")
-        lines.append("        }")
-        lines.append("    }")
+    # Guarded by an is_alive check so the relation only fires when the target is
+    # still alive at that date (a target may have died before this event).
+    for rel in c.relationships:
+        middle.append((_date_key(rel["date"]), [
+            f"    {rel['date']} = {{",
+            "        effect = {",
+            "            if = {",
+            f"                limit = {{ character:{rel['target_id']} = {{ is_alive = yes }} }}",
+            f"                {rel['effect']} = character:{rel['target_id']}",
+            "            }",
+            "        }",
+            "    }",
+        ]))
 
     # Secret effects (dated). Three shapes:
     #   bare:   add_secret = secret_X
     #   block:  add_secret = { type = secret_X target = character:Y }   (murder/lover)
     #   lover:  set_relation_lover = character:Y precedes the add_secret in the block
-    for sec in sorted(c.secrets, key=lambda s: s["date"]):
+    for sec in c.secrets:
         stype = sec["type"]
         tgt = sec.get("target_id")
-        lines.append("")
-        lines.append(f"    {sec['date']} = {{")
-        lines.append("        effect = {")
+        block = [f"    {sec['date']} = {{", "        effect = {"]
         if sec.get("with_lover") and tgt:
-            lines.append(f"            set_relation_lover = character:{tgt}")
+            # Guard the relationship on the target still being alive (same as the
+            # relationship blocks above). The add_secret below is left unguarded —
+            # a secret about a now-dead character is still valid in CK3.
+            block.append("            if = {")
+            block.append(f"                limit = {{ character:{tgt} = {{ is_alive = yes }} }}")
+            block.append(f"                set_relation_lover = character:{tgt}")
+            block.append("            }")
         if tgt and stype in _SECRET_TARGET_FORM:
-            lines.append("            add_secret = {")
-            lines.append(f"                type = {stype}")
-            lines.append(f"                target = character:{tgt}")
-            lines.append("            }")
+            block.append("            add_secret = {")
+            block.append(f"                type = {stype}")
+            block.append(f"                target = character:{tgt}")
+            block.append("            }")
         else:
-            lines.append(f"            add_secret = {{ type = {stype} }}")
-        lines.append("        }")
-        lines.append("    }")
+            block.append(f"            add_secret = {{ type = {stype} }}")
+        block.append("        }")
+        block.append("    }")
+        middle.append((_date_key(sec["date"]), block))
 
     # Personality traits block (assigned at age 16, in a date block)
     if c.personality_traits and c.personality_trait_date:
-        lines.append("")
-        lines.append(f"    {c.personality_trait_date} = {{")
+        block = [f"    {c.personality_trait_date} = {{"]
         for trait in c.personality_traits:
-            lines.append(f"        trait = {trait}")
-        lines.append("    }")
+            block.append(f"        trait = {trait}")
+        block.append("    }")
+        middle.append((_date_key(c.personality_trait_date), block))
 
     # Optional employment block (claimant displacement)
     if c.employer_id and c.employer_date:
-        lines.append("")
-        lines.append(f"    {c.employer_date} = {{")
-        lines.append(f"        employer = {c.employer_id}")
-        lines.append("    }")
+        middle.append((_date_key(c.employer_date), [
+            f"    {c.employer_date} = {{",
+            f"        employer = {c.employer_id}",
+            "    }",
+        ]))
 
-    # Death block
+    # Birth block (pinned first) — with optional learn_language effect
+    birth_block = [f"    {c.birth_date} = {{", "        birth = yes"]
+    if c.birth_languages:
+        birth_block.append("        effect = {")
+        for lang in c.birth_languages:
+            birth_block.append(f"            learn_language = {lang}")
+        birth_block.append("        }")
+    birth_block.append("    }")
+
+    # Emit: birth first, then chronologically-sorted middle blocks.
+    lines.append("")
+    lines.extend(birth_block)
+    middle.sort(key=lambda t: t[0])
+    for _, block in middle:
+        lines.append("")
+        lines.extend(block)
+
+    # Death block (pinned last)
     if c.death_date:
         lines.append("")
         lines.append(f"    {c.death_date} = {{")

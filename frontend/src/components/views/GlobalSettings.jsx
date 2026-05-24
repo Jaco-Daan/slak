@@ -112,10 +112,29 @@ const SUCCESSION_OPTIONS = [
 // Dynasty sub-components
 // ---------------------------------------------------------------------------
 
-function CultureFaithRow({ period, onUpdate, onRemove, canRemove, religions, cultures }) {
+// Determine whether a name list covering `culture` has actually been uploaded.
+// Cultures map culture_id → name_list_id (e.g. "name_list_adunaic"); the parsed
+// name_lists are keyed by the stripped id + gender (e.g. "adunaic_male"). We also
+// accept the culture id used directly as a name-list key (free-text entry).
+function nameListStatus(culture, cultures, nameLists) {
+  if (!culture) return null;
+  const keys = Object.keys(nameLists ?? {});
+  const has = (prefix) => keys.includes(`${prefix}_male`) || keys.includes(`${prefix}_female`);
+  const mapped = cultures?.[culture] ?? null;                  // e.g. "name_list_adunaic"
+  if (mapped) {
+    // A cultures file declared this culture's name_list — trust it exactly.
+    const stripped = mapped.replace(/^name_list_/, '');
+    return { loaded: has(stripped), nameListId: mapped };
+  }
+  // No culture→name_list mapping (free-text entry / no cultures file uploaded):
+  // treat the culture id itself as the name-list key.
+  return { loaded: has(culture), nameListId: null };
+}
+
+function CultureFaithRow({ period, onUpdate, onRemove, canRemove, religions, cultures, nameLists }) {
   const cultureOptions = Object.entries(cultures ?? {});
   const hasCultures = cultureOptions.length > 0;
-  const currentNameList = period.culture ? (cultures?.[period.culture] ?? null) : null;
+  const nlStatus = nameListStatus(period.culture, cultures, nameLists);
 
   const faithOptions = Object.entries(religions ?? {});
   const hasReligions = faithOptions.length > 0;
@@ -155,8 +174,16 @@ function CultureFaithRow({ period, onUpdate, onRemove, canRemove, religions, cul
             placeholder="culture_fallback"
           />
         )}
-        {currentNameList && (
-          <InfoTip text={`Name list: ${currentNameList}`} />
+        {nlStatus && nlStatus.loaded && (
+          <span className="shrink-0 text-green-600 dark:text-green-400" title={`Name list loaded${nlStatus.nameListId ? `: ${nlStatus.nameListId}` : ''}`}>✓</span>
+        )}
+        {nlStatus && !nlStatus.loaded && (
+          <span
+            className="shrink-0 text-amber-600 dark:text-amber-400 font-bold cursor-help"
+            title={nlStatus.nameListId
+              ? `No name list loaded for this culture (needs ${nlStatus.nameListId}). Upload it in the Name Lists dropzone, or names fall back to the default list.`
+              : 'No name list loaded for this culture. Upload a matching Name Lists file, or names fall back to the default list.'}
+          >⚠</span>
         )}
       </div>
       <div className="flex-1 flex items-center gap-1">
@@ -368,6 +395,7 @@ function DynastyCard({ dynasty }) {
                 canRemove={dynasty.culture_faith_periods.length > 1}
                 religions={parsed_files.religions}
                 cultures={parsed_files.cultures}
+                nameLists={parsed_files.name_lists}
               />
             ))}
             <button

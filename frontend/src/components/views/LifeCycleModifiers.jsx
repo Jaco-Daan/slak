@@ -43,7 +43,13 @@ export default function LifeCycleModifiers() {
         label="Average Lifespan"
         value={life_cycle.average_lifespan}
         onChange={(v) => setLifeCycle({ average_lifespan: v })}
-        min={30} max={110} step={1}
+        min={30} max={300} step={1}
+      />
+      <Slider
+        label="Average Marriage Age"
+        value={life_cycle.average_marriage_age ?? 22}
+        onChange={(v) => setLifeCycle({ average_marriage_age: v })}
+        min={16} max={60} step={1}
       />
       <Slider
         label="Max Age Difference Between Partners"
@@ -55,6 +61,12 @@ export default function LifeCycleModifiers() {
         label="Max Children Per Couple"
         value={life_cycle.max_children_per_couple}
         onChange={(v) => setLifeCycle({ max_children_per_couple: v })}
+        min={0} max={15} step={1}
+      />
+      <Slider
+        label="Gap (Years) Between Children"
+        value={life_cycle.gap_between_children ?? 2}
+        onChange={(v) => setLifeCycle({ gap_between_children: v })}
         min={0} max={15} step={1}
       />
       <Slider

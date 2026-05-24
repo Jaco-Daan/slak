@@ -259,7 +259,9 @@ SimulationPayload
 │   ├── male_bastard_chance (default 0.05)
 │   ├── female_bastard_chance (default 0.02)
 │   ├── dynasty_soft_cap (default 50)       ← living-member count beyond which fertility damps
-│   └── average_lifespan (default 70)       ← mean age at death; calibrates the mortality curve
+│   ├── average_lifespan (default 70)       ← mean age at death; calibrates the mortality curve
+│   ├── average_marriage_age (default 22)   ← peak of the Gaussian marriage hazard (steep rise, gentle decay)
+│   └── gap_between_children (default 2)     ← minimum years between a couple's successive legitimate births
 ├── parsed_files: ParsedFileData
 │   ├── titles_txt: str | null        ← raw .txt, re-parsed at generation time
 │   ├── traits_txt: str | null        ← raw .txt, re-parsed at generation time
@@ -316,19 +318,26 @@ Renders `WorldState` into files packed into a ZIP:
 
 **The output format is immutable** — exact Paradox Clausewitz syntax. Any whitespace change, key reorder, or conditional omission breaks the game parser. Do not modify templates unless the spec changes.
 
-Key formatting rules per character block (in order):
+Key formatting rules per character block. Top-level (undated) keys come first, then **all dated blocks are emitted in strict chronological order** (`_date_key` parses `YYYY.M.D` into an int tuple) with the **birth block pinned first and the death block pinned last** regardless of any malformed dates:
+
+Top-level (undated), in order:
 1. `name`, `dynasty`/`dynasty_house`, `religion`, `culture`
 2. `female = yes` only if female (omit for males — never write `female = no`)
-3. `father`/`mother` if known
+3. `father`/`mother` if known — **always written, including for adopted heirs** (the blood link must survive in start dates where the adopting parent isn't alive; the adopter still emits an `adopt` effect)
 4. Genetic `trait =` lines (top-level, no date block)
 5. `trait = {childhood_trait}` (top-level, no date block) if set
-6. Marriage date blocks: `YYYY.M.D = { add_spouse = id }` or `add_matrilineal_spouse`; sorted chronologically; before birth block
-7. Birth block: `YYYY.M.D = { birth = yes }` — with `effect = { learn_language = X }` lines if `birth_languages` is non-empty
-8. Relationship effect blocks (if any): `YYYY.M.D = { effect = { set_relation_X = character:ID } }` — one per `Character.relationships` entry (X ∈ lover/soulmate/rival/nemesis/friend/best_friend/bully/crush)
-9. Secret effect blocks (if any): bare `add_secret = secret_X`, or block `add_secret = { type = secret_X target = character:Y }` for murder/murder_attempt/lover; `secret_lover` (and incest-lover) also emit `set_relation_lover = character:Y` in the same block — one per `Character.secrets` entry
-10. Personality trait date block: `YYYY.M.D = { trait = ... }` at age-16 date; after birth block
-11. Employer block (claimant displacement) if `employer_id` and `employer_date`
-12. Death block if `death_date`
+
+Dated blocks (birth first → chronologically-sorted middle → death last):
+- Birth block: `YYYY.M.D = { birth = yes }` — with `effect = { learn_language = X }` lines if `birth_languages` is non-empty
+- Marriage date blocks: `YYYY.M.D = { add_spouse = id }` or `add_matrilineal_spouse`
+- Adoption effect blocks: at the adopted child's birth date, `adopt = character:ID` + a `create_character_memory`
+- Relationship effect blocks (if any): `YYYY.M.D = { effect = { if = { limit = { character:ID = { is_alive = yes } } set_relation_X = character:ID } } }` — wrapped in an `is_alive` check so the relation only fires when the target is still alive at that date (X ∈ lover/soulmate/rival/nemesis/friend/best_friend/bully/crush)
+- Secret effect blocks (if any): bare `add_secret = secret_X`, or block `add_secret = { type = secret_X target = character:Y }` for murder/murder_attempt/lover; `secret_lover` (and incest-lover) also emit `set_relation_lover = character:Y` in the same block — that relation is wrapped in the same `if = { limit = { character:Y = { is_alive = yes } } ... }` guard as relationships (the `add_secret` itself stays unguarded — a secret about a dead character is valid)
+- Personality trait date block: `YYYY.M.D = { trait = ... }` at age-16 date
+- Employer block (claimant displacement) if `employer_id` and `employer_date`
+- Death block if `death_date` (pinned last)
+
+Relationship/secret post-passes clamp generated dates to ≤ the character's death date (`_clamp_event_date`), so the death block is always the chronological last entry.
 
 Other rules:
 - `dynasty = X` or `dynasty_house = Y` — never both; auto-detected from `Character.dynasty_house`
