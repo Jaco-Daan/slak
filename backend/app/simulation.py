@@ -42,6 +42,11 @@ RELATIONSHIP_EFFECTS: dict[str, str] = {
     "crush": "set_relation_crush",
 }
 
+# Bully and crush are the only relationships that may form in childhood; every
+# other bond is adult and must not be dated before the holder turns 16.
+CHILDHOOD_RELATIONSHIP_EFFECTS: set[str] = {"set_relation_bully", "set_relation_crush"}
+RELATIONSHIP_MIN_AGE = 16
+
 # Hardcoded secret catalogue (no upload). Each entry declares how it is emitted:
 #   target=True  → block form `add_secret = { type = X target = character:Y }`
 #   lover=True   → also emits `set_relation_lover = character:Y` in the same block
@@ -1246,6 +1251,8 @@ def run_simulation(
         _generate_relationships(world)
     if settings.enable_secrets:
         _generate_secrets(world)
+    if settings.enable_relationships or settings.enable_secrets:
+        _enforce_relationship_min_age(world)
     if settings.enable_nicknames:
         _generate_nicknames(world)
 
@@ -1600,10 +1607,22 @@ def _generate_secrets(world: WorldState) -> None:
                 continue
             stype, meta = "secret_murder_attempt", _SECRET_CATALOGUE["secret_murder_attempt"]
 
+        # Whether this secret carries a relationship (set_relation_lover):
+        # secret_lover always does; incest does ~half the time. Decide it now so
+        # the date window can respect it — a lover bond is an ADULT relationship,
+        # so both holder and partner must be 16+ (only crush/bully are childhood
+        # relationships, and those are handled in _generate_relationships).
+        carries_lover = bool(meta.get("lover"))
+        if meta.get("incest") and partner is not None:
+            carries_lover = rng.random() < 0.5
+
         # Date window: overlap with partner if any, else c's own adulthood.
         if partner is not None:
             pb, pd = _life_years(partner)
-            lo, hi = max(cb, pb), min(cd, pd)
+            if carries_lover:
+                lo, hi = max(cb + 16, pb + 16), min(cd, pd)
+            else:
+                lo, hi = max(cb, pb), min(cd, pd)
         else:
             lo, hi = (cb + 16, cd) if cb + 16 <= cd else (cb, cd)
         if lo > hi:
@@ -1617,9 +1636,40 @@ def _generate_secrets(world: WorldState) -> None:
         }
         if partner is not None:
             entry["target_id"] = partner.id
-            if meta.get("lover") or (meta.get("incest") and rng.random() < 0.5):
+            if carries_lover:
                 entry["with_lover"] = True
         c.secrets.append(entry)
+
+
+def _enforce_relationship_min_age(world: WorldState) -> None:
+    """Guarantee that no relationship except crush/bully is dated before the
+    holder turns 16. Each generator already respects this in its own date window,
+    but this single pass enforces the rule across *every* emission path — adult
+    relationships and lover-bearing secrets alike — so no current or future path
+    can leave behind an underage bond. An offending relationship is dropped; an
+    offending lover-secret keeps the secret but loses its `set_relation_lover`.
+    """
+    def _year(date: object) -> Optional[int]:
+        try:
+            return int(str(date).split(".")[0])
+        except (ValueError, IndexError):
+            return None
+
+    for c in world.characters.values():
+        birth_year = _year(c.birth_date)
+        if birth_year is None:
+            continue
+        floor = birth_year + RELATIONSHIP_MIN_AGE
+
+        c.relationships = [
+            rel for rel in c.relationships
+            if rel.get("effect") in CHILDHOOD_RELATIONSHIP_EFFECTS
+            or (_year(rel.get("date")) or floor) >= floor
+        ]
+
+        for sec in c.secrets:
+            if sec.get("with_lover") and (_year(sec.get("date")) or floor) < floor:
+                sec.pop("with_lover", None)
 
 
 # ---------------------------------------------------------------------------
