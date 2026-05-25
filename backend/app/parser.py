@@ -246,49 +246,62 @@ def extract_title_holder_events(ast: dict) -> dict[str, list[dict]]:
     return result
 
 
+_ASSUMED_REIGN_YEARS = 50  # a single holder is assumed to rule at most this long
+
+
 def compute_title_gaps(
     events: list[dict],
     start_year: int,
     end_year: int,
     min_gap_years: int = 50,
+    assumed_reign_years: int = _ASSUMED_REIGN_YEARS,
 ) -> list[dict]:
     """Vacant stretches within ``[start_year, end_year]`` longer than
-    ``min_gap_years`` — the fillable gaps. A title is vacant before its first
-    holder event and during any ``holder = 0`` span. Returns
-    ``[{"start_year": int, "end_year": int}]`` (gaps of exactly 50 years or
-    shorter are excluded — too short to be worth filling)."""
+    ``min_gap_years`` — the fillable gaps.
+
+    Each non-vacant holder occupies only ``[year, min(next event, year +
+    assumed_reign_years)]``: a single holder can't realistically rule a title for
+    centuries, so a long span between two explicit holders (e.g. 6550 then 6720)
+    is an implied vacancy, not one impossibly-long reign. A title is also vacant
+    before its first holder and during any ``holder = 0`` span. Returns
+    ``[{"start_year": int, "end_year": int}]`` (gaps of ``min_gap_years`` or
+    shorter are excluded — too short to be worth filling). Mirrored in JS in
+    ``GanttChart.jsx`` (``computeSegments``)."""
     if end_year <= start_year:
         return []
 
-    # Collapse events to state-change points (vacant flips only).
-    changes: list[tuple[int, bool]] = []
-    prev: bool | None = None
-    for e in sorted(events, key=lambda x: x["year"]):
-        if prev is None or e["vacant"] != prev:
-            changes.append((e["year"], e["vacant"]))
-            prev = e["vacant"]
+    evs = sorted(events, key=lambda x: x["year"])
 
-    # State at start_year: vacant unless a holder was established earlier.
-    state_vacant = True
-    future: list[tuple[int, bool]] = []
-    for (y, vac) in changes:
-        if y <= start_year:
-            state_vacant = vac
+    # Occupied intervals, each capped at the next event or the assumed reign.
+    occ: list[list[int]] = []
+    for i, e in enumerate(evs):
+        if e["vacant"]:  # holder = 0 establishes a vacancy, not occupancy
+            continue
+        y = e["year"]
+        next_y = evs[i + 1]["year"] if i + 1 < len(evs) else end_year
+        occ.append([y, min(next_y, y + assumed_reign_years)])
+    occ.sort()
+    merged: list[list[int]] = []
+    for s, e in occ:
+        if merged and s <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], e)
         else:
-            future.append((y, vac))
+            merged.append([s, e])
 
-    # Walk vacancy segments across the window.
+    # Gaps are the spans of [start, end] not covered by an occupied interval.
     gaps: list[dict] = []
     cursor = start_year
-    state = state_vacant
-    for (y, vac) in future:
-        if y >= end_year:
+    for s, e in merged:
+        cs = max(s, start_year)
+        ce = min(e, end_year)
+        if ce <= cursor:
+            continue
+        if cs >= end_year:
             break
-        if state and (y - cursor) > min_gap_years:
-            gaps.append({"start_year": cursor, "end_year": y})
-        cursor = y
-        state = vac
-    if state and (end_year - cursor) > min_gap_years:
+        if cs > cursor and (cs - cursor) > min_gap_years:
+            gaps.append({"start_year": cursor, "end_year": cs})
+        cursor = ce
+    if (end_year - cursor) > min_gap_years:
         gaps.append({"start_year": cursor, "end_year": end_year})
     return gaps
 

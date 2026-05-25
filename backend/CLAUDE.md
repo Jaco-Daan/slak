@@ -63,7 +63,7 @@ See root `CLAUDE.md` for architecture overview, commands, and coupling points.
 | `transform_titles(ast)` | top-level AST dict | Recursive title tree: `{id, tier, is_landed, metadata, children}` |
 | `extract_title_ids_from_history(ast)` | title history AST dict | Flat list of title ID strings (top-level keys) |
 | `extract_title_holder_events(ast)` | title history AST dict | `{title_id: [{date, year, vacant}]}` — chronological holder-change events; `vacant` only when `holder = 0` (any other holder, incl. `k_wastelands_holder`, is occupied/locked) |
-| `compute_title_gaps(events, start, end, min_gap=50)` | one title's events + window | Vacant stretches within `[start,end]` longer than 50 yrs — the fillable gaps. Mirrored in JS in `GanttChart.jsx` (`computeSegments`) |
+| `compute_title_gaps(events, start, end, min_gap=50, assumed_reign=50)` | one title's events + window | Vacant stretches within `[start,end]` longer than `min_gap` — the fillable gaps. Each non-vacant holder occupies only `[year, min(next event, year+assumed_reign)]`, so a long span between two explicit holders (e.g. 6550 then 6720) surfaces as a gap rather than one impossibly-long reign. Mirrored in JS in `GanttChart.jsx` (`computeSegments`) |
 | `extract_genetic_traits(ast)` | top-level AST dict | List of `{id, group, level, birth_chance, random_creation, opposites}` |
 | `extract_death_reasons(ast)` | top-level AST dict | List of `{id, is_natural, required_trait}` |
 | `extract_name_lists(ast)` | top-level AST dict | Dict: `{culture_male: [...], culture_female: [...], default_male: [...], default_female: [...]}` |

@@ -174,10 +174,10 @@ Note: `uploadDynasties` does **not** exist — dynasties are user-defined via th
 ## GanttChart (existing-history / gap model)
 
 Rewritten around uploaded title history. Each title row renders, positioned by absolute year (`x = (year - start_year) * pxPerYear`):
-- **Locked grey bars** for existing occupied periods (any non-`0` holder) — read-only, never overwritten.
+- **Locked grey bars** for existing occupied periods. Each non-`0` holder occupies only `[year, min(next event, year + ASSUMED_REIGN_YEARS=50)]` — a holder can't rule for centuries, so a long span between two explicit holders (e.g. 6550 then 6720) is split into the holder's ~50yr reign plus a fillable gap. Read-only, never overwritten.
 - **Amber dashed gap dropdowns** for vacant stretches >50yr within the Start/End window. A gap >100yr shows multiple side-by-side slots (`maxDyn = 1 + floor((len-1)/100)`) splitting the gap; choosing dynasties calls `setTitleGapFillDynasties(titleId, gapStart, gapEnd, dynastyIds[])`. Holders are drawn backend-side from each dynasty's real simulated members.
 
-`computeSegments(events, start, end, minGap=50)` mirrors the backend `compute_title_gaps`/occupancy split exactly (verify both stay in sync). Gaps recompute live when Start/End years change. The legacy draggable-block model (`DynastyBlock`, drag/reorder, transition popover) was removed — assignment is now per-gap. `ROW_HEIGHT = 48`, `LABEL_WIDTH = 240`, `pxPerYear` auto-fits the container.
+`computeSegments(events, start, end, minGap=50)` mirrors the backend `compute_title_gaps`/occupancy split exactly, including the `ASSUMED_REIGN_YEARS` cap (verify both stay in sync). Gaps recompute live when Start/End years change. The legacy draggable-block model (`DynastyBlock`, drag/reorder, transition popover) was removed — assignment is now per-gap. `ROW_HEIGHT = 48`, `LABEL_WIDTH = 240`, `pxPerYear` auto-fits the container.
 
 ---
 

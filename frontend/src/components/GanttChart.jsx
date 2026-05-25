@@ -6,40 +6,54 @@ const LABEL_WIDTH = 240;
 const MIN_PX_PER_YEAR = 2;
 const MAX_PX_PER_YEAR = 20;
 const MIN_GAP_YEARS = 50; // gaps of 50 years or shorter are too short to fill
+// A single holder can't occupy a title for centuries: each non-vacant holder is
+// assumed to rule at most this long. Spans between holders longer than this are
+// treated as implied vacancies (a holder accedes, dies, and is not re-set until
+// the next explicit holder), so they surface as fillable gaps.
+const ASSUMED_REIGN_YEARS = 50;
 
 const TIER_FROM_PREFIX = { h_: 'hegemony', e_: 'empire', k_: 'kingdom', d_: 'duchy', c_: 'county', b_: 'barony' };
 
-// Mirror of backend compute_title_gaps + occupancy: walk holder events and split
-// [start,end] into occupied (any non-0 holder) and vacant gaps (>50yr → fillable).
+// Mirror of backend compute_title_gaps: each non-vacant holder occupies
+// [year, min(next event, year + ASSUMED_REIGN_YEARS)]; everything else in
+// [start,end] is vacant, and vacant stretches >minGap are fillable gaps. This is
+// why a title with holders far apart (e.g. 6550 then 6720) shows a gap between
+// them rather than reading as one impossibly-long reign.
 function computeSegments(events, start, end, minGap = MIN_GAP_YEARS) {
   const occupied = [];
   const gaps = [];
   if (end <= start) return { occupied, gaps };
 
-  const changes = [];
-  let prev = null;
-  for (const e of [...(events || [])].sort((a, b) => a.year - b.year)) {
-    if (prev === null || e.vacant !== prev) { changes.push([e.year, e.vacant]); prev = e.vacant; }
+  const evs = [...(events || [])].sort((a, b) => a.year - b.year);
+
+  // Build occupied intervals, capping each holder's reign at the next event.
+  const occ = [];
+  for (let i = 0; i < evs.length; i++) {
+    if (evs[i].vacant) continue; // holder = 0 establishes a vacancy, not occupancy
+    const y = evs[i].year;
+    const nextY = i + 1 < evs.length ? evs[i + 1].year : end;
+    occ.push([y, Math.min(nextY, y + ASSUMED_REIGN_YEARS)]);
+  }
+  occ.sort((a, b) => a[0] - b[0]);
+  const merged = [];
+  for (const [s, e] of occ) {
+    if (merged.length && s <= merged[merged.length - 1][1]) {
+      merged[merged.length - 1][1] = Math.max(merged[merged.length - 1][1], e);
+    } else merged.push([s, e]);
   }
 
-  let stateVacant = true;
-  const future = [];
-  for (const [y, v] of changes) { if (y <= start) stateVacant = v; else future.push([y, v]); }
-
+  // Walk the window: gaps are the spans not covered by an occupied interval.
   let cursor = start;
-  let state = stateVacant;
-  const push = (s, e, vac) => {
-    if (e <= s) return;
-    if (vac) { if (e - s > minGap) gaps.push({ start: s, end: e }); }
-    else occupied.push({ start: s, end: e });
-  };
-  for (const [y, v] of future) {
-    if (y >= end) break;
-    push(cursor, y, state);
-    cursor = y;
-    state = v;
+  for (const [s, e] of merged) {
+    const cs = Math.max(s, start);
+    const ce = Math.min(e, end);
+    if (ce <= cursor) continue;       // interval ends before the cursor (e.g. pre-window)
+    if (cs >= end) break;
+    if (cs > cursor && cs - cursor > minGap) gaps.push({ start: cursor, end: cs });
+    occupied.push({ start: Math.max(cs, cursor), end: ce });
+    cursor = ce;
   }
-  push(cursor, end, state);
+  if (end - cursor > minGap) gaps.push({ start: cursor, end });
   return { occupied, gaps };
 }
 
