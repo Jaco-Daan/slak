@@ -46,6 +46,7 @@ function _defaultDynasty(globalSettings) {
     lowborn_spouses: false,
     guaranteed_survival: false,
     numenorean_blood: false,
+    numenorean_tier_override: 0,   
     name_inheritance: {
       grandparent_chance: 0.05,
       parent_chance: 0.05,

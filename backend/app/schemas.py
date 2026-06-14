@@ -48,6 +48,8 @@ class DynastyDefinition(BaseModel):
     # birth date, declining over the Third Age), with lifespan +tier*20 years and
     # fertile window +tier*10 years. Off for normal dynasties.
     numenorean_blood: bool = False
+# Override the founding blood tier. 0 = auto (Default Behavior)
+    numenorean_tier_override: int = Field(default=0, ge=0, le=10)
     name_inheritance: NameInheritance = Field(default_factory=NameInheritance)
     languages: list[str] = Field(default_factory=list)
     # Each language entry: "language_id,start_year,end_year" — parsed at simulation time
