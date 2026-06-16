@@ -108,6 +108,16 @@ const SUCCESSION_OPTIONS = [
   { value: 'SENIORITY',      label: 'Seniority (oldest dynasty member)' },
 ];
 
+// Blood-of-Númenór tier override code
+const NUMENOREAN_TIER_OPTIONS = [
+  { value: 0, label: 'Auto — by birth year (default)' },
+  ...Array.from({ length: 10 }, (_, i) => {
+    const t = i + 1;
+    const note = t === 10 ? ' (strongest)' : t === 1 ? ' (weakest)' : '';
+    return { value: t, label: `Tier ${t}${note}` };
+  }),
+];
+
 // ---------------------------------------------------------------------------
 // Dynasty sub-components
 // ---------------------------------------------------------------------------
@@ -459,8 +469,23 @@ function DynastyCard({ dynasty }) {
               info="Realms/LotR only. Members carry a blood_of_numenor_N trait whose tier is set by birth date (T10 strongest in the early Third Age, declining to T1 by the late Third Age). Each tier adds +20 years of life expectancy and +10 fertile years, so these lines live far longer and breed later."
               infoUp
               value={dynasty.numenorean_blood}
-              onChange={(v) => upd({ numenorean_blood: v })}
+              onChange={(v) => upd(v
+                ? { numenorean_blood: true }
+                : { numenorean_blood: false, numenorean_tier_override: 0 })}
             />
+            {dynasty.numenorean_blood && (
+              <div className="pl-7">
+                <SelectField
+                  label="Blood Tier Override"
+                  value={dynasty.numenorean_tier_override ?? 0}
+                  onChange={(v) => upd({ numenorean_tier_override: Number(v) })}
+                  options={NUMENOREAN_TIER_OPTIONS}
+                />
+                <p className="text-xs text-gray-500 dark:text-gray-400 -mt-3 mb-3">
+                  Auto derives the founding tier from birth year (declining over the Third Age). Pick 1–10 to force this dynasty's blood tier instead.
+                </p>
+              </div>
+            )}
           </div>
         </div>
       )}

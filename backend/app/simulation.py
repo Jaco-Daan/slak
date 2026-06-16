@@ -441,6 +441,8 @@ class WorldState:
         self.dynasty_ids_used: set[str] = set()
         # Dynasty IDs flagged as Númenórean (members inherit blood_of_numenor)
         self.numenorean_dynasties: set[str] = set()
+        # Overider Injection
+        self.numenorean_tier_overrides: dict[str, int] = {}
 
         # Parsed registries
         self.traits_registry: list[dict] = []
@@ -654,7 +656,9 @@ class WorldState:
         m_tier = mother.numenorean_tier if mother else 0
         dynasty_flagged = dynasty in self.numenorean_dynasties
         if dynasty_flagged or f_tier or m_tier:
-            ceiling = _numenorean_tier_for_year(birth_year)
+        # Overider Injection
+            override = self.numenorean_tier_overrides.get(dynasty, 0)
+            ceiling = override if override else _numenorean_tier_for_year(birth_year)
             parent_tier = max(f_tier, m_tier)
             if parent_tier <= 0:
                 # Founder of a flagged dynasty — seed the line from its era.
@@ -873,6 +877,13 @@ def run_simulation(
     world.numenorean_dynasties = {
         d.id for d in (payload.dynasty_definitions or [])
         if getattr(d, "numenorean_blood", False)
+    }
+        # Overider Injection
+    world.numenorean_tier_overrides = {
+        d.id: int(getattr(d, "numenorean_tier_override", 0))
+        for d in (payload.dynasty_definitions or [])
+        if getattr(d, "numenorean_blood", False)
+        and 1 <= int(getattr(d, "numenorean_tier_override", 0)) <= 10
     }
     world.placeholder_title_ids = set()
     # Titles present in the uploaded history file own their output via text-merge.
