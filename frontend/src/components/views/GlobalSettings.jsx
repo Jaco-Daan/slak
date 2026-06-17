@@ -680,7 +680,7 @@ export default function GlobalSettings() {
         )}
 
         {dynasty_definitions.map((d) => (
-          <DynastyCard key={d.id} dynasty={d} />
+          <DynastyCard key={d._uid ?? d.id} dynasty={d} />
         ))}
       </div>
     </div>

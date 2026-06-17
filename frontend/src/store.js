@@ -33,6 +33,10 @@ function _defaultPersonalityTraits() {
 
 function _defaultDynasty(globalSettings) {
   return {
+    // Stable React key, separate from the user-editable Paradox `id`. The id is
+    // used as a React key nowhere — editing it must NOT remount the card (that
+    // dropped input focus after every keystroke). Never sent to the backend.
+    _uid: `dyn_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
     id: `dynasty_new_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
     name: 'New Dynasty',
     motto: '',
@@ -527,7 +531,7 @@ export const useStore = create(persist((set, get) => ({
       title_gap_fills: s.title_gap_fills,
       // Serialize dynasty languages from object form [{id,start_year,end_year}] to "id,start,end" strings
       // Apply culture/faith fallbacks when fields are left blank
-      dynasty_definitions: s.dynasty_definitions.map((d) => ({
+      dynasty_definitions: s.dynasty_definitions.map(({ _uid, ...d }) => ({
         ...d,
         culture_faith_periods: d.culture_faith_periods.map((p) => ({
           ...p,
@@ -596,9 +600,19 @@ export const useStore = create(persist((set, get) => ({
   }),
   // On rehydrate, always recompute dark_mode from the explicit key so a previously
   // persisted value can't override the dark default (default dark unless user picked light).
-  merge: (persisted, current) => ({
-    ...current,
-    ...persisted,
-    dark_mode: localStorage.getItem('ck3_dark_mode') !== 'false',
-  }),
+  merge: (persisted, current) => {
+    const merged = {
+      ...current,
+      ...persisted,
+      dark_mode: localStorage.getItem('ck3_dark_mode') !== 'false',
+    };
+    // Backfill a stable React key onto dynasties persisted before `_uid` existed.
+    // Index is unique within the array — enough for a React key — and survives id edits.
+    if (Array.isArray(merged.dynasty_definitions)) {
+      merged.dynasty_definitions = merged.dynasty_definitions.map((d, i) =>
+        d && d._uid ? d : { ...d, _uid: `dyn_legacy_${i}` }
+      );
+    }
+    return merged;
+  },
 }));
